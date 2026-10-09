@@ -5,5 +5,3 @@ joblib
 pandas
 plotly
 pypdf
-Pillow
-pytesseract
