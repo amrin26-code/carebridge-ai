@@ -309,6 +309,8 @@ def safe_text(value, limit=2000):
     return escape(str(value if value is not None else ""))[:limit].replace("\n", "<br/>")
 
 # ------------------------- Built-in ML Classifier Engine -------------------------
+MODEL_FILE = Path("caretrail_model.joblib")
+
 @st.cache_resource
 def get_trained_nlp_pipeline():
     training_dataset = [
@@ -353,11 +355,30 @@ def get_trained_nlp_pipeline():
         texts, labels, test_size=0.20, random_state=42, stratify=labels
     )
     
-    pipeline = Pipeline([
-        ('tfidf', TfidfVectorizer(ngram_range=(1, 2))),
-        ('clf', LinearSVC(C=1.0, random_state=42))
-    ])
-    pipeline.fit(X_train, y_train)
+    # Active joblib persistence usage: Load existing model file if present, otherwise train and save using joblib.dump
+    if MODEL_FILE.exists():
+        try:
+            pipeline = joblib.load(MODEL_FILE)
+        except Exception:
+            pipeline = Pipeline([
+                ('tfidf', TfidfVectorizer(ngram_range=(1, 2))),
+                ('clf', LinearSVC(C=1.0, random_state=42))
+            ])
+            pipeline.fit(X_train, y_train)
+            try:
+                joblib.dump(pipeline, MODEL_FILE)
+            except Exception:
+                pass
+    else:
+        pipeline = Pipeline([
+            ('tfidf', TfidfVectorizer(ngram_range=(1, 2))),
+            ('clf', LinearSVC(C=1.0, random_state=42))
+        ])
+        pipeline.fit(X_train, y_train)
+        try:
+            joblib.dump(pipeline, MODEL_FILE)
+        except Exception:
+            pass  # Fallback gracefully if filesystem permissions restrict writing
     
     test_preds = pipeline.predict(X_test)
     report = classification_report(y_test, test_preds, output_dict=True)
@@ -1393,7 +1414,7 @@ elif page == "About & Privacy":
     )
     st.subheader("Rubric & Module Mapping")
     st.markdown("""- **Module Mapping:** Module 2 — Healthcare Applications (Intelligent PHR Assistant).
-- **AI Techniques:** TF-IDF text features with a LinearSVC intent classifier, evaluated using a stratified holdout split.
+- **AI Techniques:** TF-IDF text features with a LinearSVC intent classifier, evaluated using a stratified holdout split and persisted via joblib.
 - **Rule-Based Component:** Selected blood-pressure and temperature threshold alerts.
 - **Data Limitations:** The classifier uses a small, manually constructed dataset. Its evaluation does not establish clinical validity.
 - **Privacy and Compliance:** CareTrail is a student prototype. It has not been independently assessed or certified as HIPAA-compliant and should not be used to store identifiable patient records.""")
