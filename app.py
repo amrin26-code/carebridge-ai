@@ -420,31 +420,43 @@ def build_sample_profile(profile):
     vitals, symptoms = [], []
     for offset in range(13, -1, -1):
         d = date.today() - timedelta(days=offset)
+        
         if profile == "Alex Morgan — Diabetes Monitoring":
+            glucose_val = 126 + (offset * 7 % 38)
             v = {"date": d.isoformat(), "systolic": 118 + (offset % 4) * 2, "diastolic": 76 + (offset % 3), 
                  "heart_rate": 72 + (offset % 5), "temperature": 36.6, "weight": round(78.4 - (13-offset)*.04, 1), 
-                 "glucose_mg_dl": 126 + (offset * 7 % 38)}
+                 "glucose_mg_dl": glucose_val}
             sym, severity = "Fatigue", (offset * 3) % 6
+
         elif profile == "Jamie Taylor — Post-Surgery Recovery":
+            glucose_val = 95 + (offset % 5) * 3
             v = {"date": d.isoformat(), "systolic": 116 + (offset % 5) * 2, "diastolic": 74 + (offset % 4), 
                  "heart_rate": 76 + (offset % 6), "temperature": round(36.5 + (offset % 4)*.1, 1), 
-                 "weight": 65.2, "glucose_mg_dl": None}
+                 "weight": 65.2, "glucose_mg_dl": glucose_val}
             sym, severity = "Surgical Site Pain", min(8, max(1, offset // 2 + 1))
+
         elif profile == "Sam Chen — Hypertension Management":
+            glucose_val = 102 + (offset * 3 % 15)
             v = {"date": d.isoformat(), "systolic": 142 - (13-offset)//2, "diastolic": 88 - (13-offset)//3, 
-                 "heart_rate": 68 + (offset % 4), "temperature": 36.6, "weight": 82.1, "glucose_mg_dl": None}
+                 "heart_rate": 68 + (offset % 4), "temperature": 36.6, "weight": 82.1, "glucose_mg_dl": glucose_val}
             sym, severity = "Light Dizziness", (offset * 2) % 5
+
         elif profile == "Patel Family — Pediatric Checkup":
+            glucose_val = 88 + (offset % 4) * 2
             v = {"date": d.isoformat(), "systolic": 102 + (offset % 3), "diastolic": 64 + (offset % 2), 
                  "heart_rate": 95 + (offset % 8), "temperature": round(36.8 + (offset % 2)*.1, 1), 
-                 "weight": 24.5, "glucose_mg_dl": None}
+                 "weight": 24.5, "glucose_mg_dl": glucose_val}
             sym, severity = "Mild Cough", (offset) % 4
+
         elif profile == "Elena Rostova — Chronic Pain Tracking":
+            glucose_val = 98 + (offset * 2 % 12)
             v = {"date": d.isoformat(), "systolic": 120 + (offset % 3), "diastolic": 78 + (offset % 2), 
-                 "heart_rate": 74 + (offset % 4), "temperature": 36.6, "weight": 58.0, "glucose_mg_dl": None}
+                 "heart_rate": 74 + (offset % 4), "temperature": 36.6, "weight": 58.0, "glucose_mg_dl": glucose_val}
             sym, severity = "Joint Stiffness", min(9, max(2, (offset * 4) % 10))
+
         else:
-            v = {"date": d.isoformat(), "systolic": 120, "diastolic": 80, "heart_rate": 72, "temperature": 36.6, "weight": 70.0, "glucose_mg_dl": None}
+            glucose_val = 95 + (offset % 6)
+            v = {"date": d.isoformat(), "systolic": 120, "diastolic": 80, "heart_rate": 72, "temperature": 36.6, "weight": 70.0, "glucose_mg_dl": glucose_val}
             sym, severity = "None", 0
 
         vitals.append(v)
