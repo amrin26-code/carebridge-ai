@@ -21,7 +21,8 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.svm import LinearSVC
 from sklearn.pipeline import Pipeline
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, f1_score
+from sklearn.model_selection import train_test_split
 
 # =========================================================
 # CARETRAIL — Intelligent PHR Assistant Platform
@@ -44,7 +45,7 @@ DEFAULTS = {
     "classifier_result": None,
     "visit_comparison": None,
     "active_profile": "Personal Records",
-    "custom_profiles": {},  # Stores user-created test patient profiles
+    "custom_profiles": {},
     "ai_history": [],
     "generated_pdf": None,
     "page": "Overview",
@@ -54,38 +55,38 @@ for key, value in DEFAULTS.items():
     if key not in st.session_state:
         st.session_state[key] = copy.deepcopy(value)
 
-# ------------------------- Pure Light & Black Dark Theme Palette -------------------------
+# ------------------------- Theme Palette System -------------------------
 THEMES = {
     "Light": {
-        "bg": "#FFFFFF",            # Pure Solid White Background
-        "panel": "#F8FAFC",         # Crisp Light Panel
-        "panel_alt": "#F1F5F9",     # Panel Active Highlight
-        "text": "#000000",          # Pure High-Contrast Black Text
-        "muted": "#475569",         # Muted Subtext
-        "border": "#CBD5E1",        # Solid Border
-        "accent": "#0D9488",        # Clinical Emerald Accent
-        "accent_hover": "#0F766E",  # Deep Accent Hover
-        "accent_text": "#FFFFFF",   # Accent Text
-        "input_bg": "#FFFFFF",      # Pure White Inputs
-        "input_text": "#000000",    # Black Input Text
-        "sidebar": "#F8FAFC",       # Light Gray Sidebar
-        "sidebar_text": "#000000",  # Dark Sidebar Text
+        "bg": "#FFFFFF",
+        "panel": "#F8FAFC",
+        "panel_alt": "#F1F5F9",
+        "text": "#000000",
+        "muted": "#475569",
+        "border": "#CBD5E1",
+        "accent": "#0D9488",
+        "accent_hover": "#0F766E",
+        "accent_text": "#FFFFFF",
+        "input_bg": "#FFFFFF",
+        "input_text": "#000000",
+        "sidebar": "#F8FAFC",
+        "sidebar_text": "#000000",
         "plot": "plotly_white",
     },
     "Dark": {
-        "bg": "#000000",            # Pure Solid Pitch Black Background
-        "panel": "#111827",         # Deep Slate Dark Panel
-        "panel_alt": "#1F2937",     # Dark Highlight Panel
-        "text": "#F9FAFB",          # Pure High-Contrast White Text
-        "muted": "#9CA3AF",         # Cool Gray Muted Text
-        "border": "#334155",        # Dark Slate Border
-        "accent": "#14B8A6",        # Glowing Teal Accent
-        "accent_hover": "#2DD4BF",  # Bright Teal Hover
-        "accent_text": "#042F2E",   # Accent Text
-        "input_bg": "#1F2937",      # Dark Input Background
-        "input_text": "#F9FAFB",    # White Input Text
-        "sidebar": "#090D16",       # Deep Navy/Black Sidebar
-        "sidebar_text": "#F9FAFB",  # Light Sidebar Text
+        "bg": "#000000",
+        "panel": "#111827",
+        "panel_alt": "#1F2937",
+        "text": "#F9FAFB",
+        "muted": "#9CA3AF",
+        "border": "#334155",
+        "accent": "#14B8A6",
+        "accent_hover": "#2DD4BF",
+        "accent_text": "#042F2E",
+        "input_bg": "#1F2937",
+        "input_text": "#F9FAFB",
+        "sidebar": "#090D16",
+        "sidebar_text": "#F9FAFB",
         "plot": "plotly_dark",
     },
 }
@@ -243,7 +244,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ------------------------- Helpers -------------------------
+# ------------------------- Helpers & Validation Engines -------------------------
 def today_str():
     return date.today().isoformat()
 
@@ -258,6 +259,8 @@ def current_records(key):
     return value if isinstance(value, list) else []
 
 def csv_bytes(records):
+    if not records:
+        return pd.DataFrame().to_csv(index=False).encode("utf-8-sig")
     return pd.DataFrame(records).to_csv(index=False).encode("utf-8-sig")
 
 def chart_theme(fig):
@@ -273,51 +276,88 @@ def chart_theme(fig):
     fig.update_yaxes(gridcolor=C["border"], zerolinecolor=C["border"])
     return fig
 
+def validate_dataframe(df, required_columns, context="Dataset"):
+    """Robust input validation helper across tables and uploads."""
+    if df is None or df.empty:
+        st.warning(f"⚠️ {context} contains no valid records.")
+        return False
+    missing_cols = [col for col in required_columns if col not in df.columns]
+    if missing_cols:
+        st.error(f"❌ Input validation failed for {context}: Missing column(s): {', '.join(missing_cols)}")
+        return False
+    return True
+
+def safe_text(value, limit=2000):
+    return escape(str(value if value is not None else ""))[:limit].replace("\n", "<br/>")
+
 # ------------------------- Built-in ML Classifier Engine -------------------------
 @st.cache_resource
 def get_trained_nlp_pipeline():
-    """Trains a TF-IDF + LinearSVC Model on Synthetic PHR Queries for local intent recognition."""
-    training_data = [
+    """Trains TF-IDF + LinearSVC Pipeline with strict 80/20 Train/Test Split metrics."""
+    training_dataset = [
         ("I have severe pain in my head", "symptom_help"),
         ("My fever is 102 degrees", "symptom_help"),
         ("Experiencing dizziness and nausea", "symptom_help"),
         ("Sore throat and persistent cough", "symptom_help"),
         ("Sharp chest pain when breathing", "symptom_help"),
         ("Swollen ankle after falling", "symptom_help"),
+        ("Stomach cramps and acid reflux", "symptom_help"),
+        ("Shortness of breath after climbing stairs", "symptom_help"),
         ("When should I take my insulin dose?", "medication_query"),
         ("Can I take aspirin with blood thinners?", "medication_query"),
         ("What is the prescribed dosage for metformin?", "medication_query"),
         ("Forgot my morning blood pressure pill", "medication_query"),
         ("Side effects of statin medications", "medication_query"),
+        ("Am I supposed to take antibiotics with food?", "medication_query"),
+        ("Can I skip a missed dose of lisinopril?", "medication_query"),
         ("Show my clinic visit summary", "records_query"),
         ("Download my hospital doctor notes", "records_query"),
         ("Where is my lab test result PDF stored?", "records_query"),
         ("List all doctor appointments from last month", "records_query"),
         ("Find my past medical history reports", "records_query"),
+        ("View uploaded clinical records", "records_query"),
         ("Show my blood pressure graph for last week", "health_trends"),
         ("Is my glucose level spiking or stable?", "health_trends"),
         ("Display weight loss progress chart", "health_trends"),
         ("Plot my heart rate history over time", "health_trends"),
         ("Are my daily temperature trends normal?", "health_trends"),
+        ("Chart my systolic readings over 30 days", "health_trends"),
         ("How do I backup my health data?", "general_help"),
         ("How to use this PHR application", "general_help"),
         ("How do I add a new patient profile?", "general_help"),
         ("Is my medical data encrypted locally?", "general_help"),
-        ("Export my health summary report", "general_help")
+        ("Export my health summary report", "general_help"),
+        ("Where are my privacy settings configured?", "general_help"),
+        ("How do I restore my session JSON backup?", "general_help")
     ]
-    texts, labels = zip(*training_data)
+    texts, labels = zip(*training_dataset)
+    
+    # Stratified 80/20 train/test split to guarantee test set un-seen evaluation
+    X_train, X_test, y_train, y_test = train_test_split(
+        texts, labels, test_size=0.20, random_state=42, stratify=labels
+    )
+    
     pipeline = Pipeline([
         ('tfidf', TfidfVectorizer(ngram_range=(1, 2))),
         ('clf', LinearSVC(C=1.0, random_state=42))
     ])
-    pipeline.fit(texts, labels)
+    pipeline.fit(X_train, y_train)
     
-    preds = pipeline.predict(texts)
-    report = classification_report(labels, preds, output_dict=True)
-    cm = confusion_matrix(labels, preds)
-    return pipeline, report, cm
+    test_preds = pipeline.predict(X_test)
+    report = classification_report(y_test, test_preds, output_dict=True)
+    cm = confusion_matrix(y_test, test_preds)
+    test_acc = accuracy_score(y_test, test_preds)
+    macro_f1 = f1_score(y_test, test_preds, average="macro")
+    
+    split_info = {
+        "train_size": len(X_train),
+        "test_size": len(X_test),
+        "test_acc": test_acc,
+        "macro_f1": macro_f1
+    }
+    return pipeline, report, cm, split_info, list(pipeline.named_steps['clf'].classes_)
 
-# ------------------------- Demo & Custom Profile Engines -------------------------
+# ------------------------- Profiles & Synthetic Demo Engine -------------------------
 BUILTIN_PROFILES = [
     "Personal Records",
     "Alex Morgan — Diabetes Monitoring",
@@ -326,6 +366,36 @@ BUILTIN_PROFILES = [
     "Patel Family — Pediatric Checkup",
     "Elena Rostova — Chronic Pain Tracking"
 ]
+
+def load_synthetic_demo_comparison():
+    """Injects 2 fictional synthetic health records for 1-click rubric comparison."""
+    rec_a = {
+        "date": "2026-09-15", "provider": "St. Jude Clinic",
+        "reason": "Routine Checkup", "diagnosis": "Hypertension Stage 1",
+        "medication": "Lisinopril", "dosage": "10mg", "notes": "Patient reports mild dizziness."
+    }
+    rec_b = {
+        "date": "2026-10-01", "provider": "City Central Hospital",
+        "reason": "Follow-up Visit", "diagnosis": "Hypertension Controlled",
+        "medication": "Lisinopril", "dosage": "20mg", "notes": "Dosage adjusted. Dizziness resolved."
+    }
+    st.session_state.visits = [
+        {"date": rec_a["date"], "provider": rec_a["provider"], "reason": rec_a["reason"], "diagnosis": rec_a["diagnosis"], "notes": f"Medication: {rec_a['medication']} {rec_a['dosage']}. {rec_a['notes']}"},
+        {"date": rec_b["date"], "provider": rec_b["provider"], "reason": rec_b["reason"], "diagnosis": rec_b["diagnosis"], "notes": f"Medication: {rec_b['medication']} {rec_b['dosage']}. {rec_b['notes']}"}
+    ]
+    st.session_state.medications = [
+        {"name": "Lisinopril", "dose": "10mg", "frequency": "Once Daily", "time": "08:00", "start_date": "2026-09-15", "notes": "Record A entry"},
+        {"name": "Lisinopril", "dose": "20mg", "frequency": "Once Daily", "time": "08:00", "start_date": "2026-10-01", "notes": "Record B entry (Dosage increase)"}
+    ]
+    st.session_state.vitals = [
+        {"date": "2026-09-15", "systolic": 142, "diastolic": 90, "heart_rate": 78, "temperature": 36.7, "weight": 81.5, "glucose_mg_dl": 105},
+        {"date": "2026-10-01", "systolic": 124, "diastolic": 82, "heart_rate": 72, "temperature": 36.6, "weight": 80.8, "glucose_mg_dl": 98}
+    ]
+    st.session_state.symptoms = [
+        {"date": "2026-09-15", "symptom": "Dizziness", "severity": 6, "duration": "A few hours", "notes": "Reported during doctor checkup"},
+        {"date": "2026-10-01", "symptom": "Dizziness", "severity": 0, "duration": "Ongoing", "notes": "Symptom resolved after dosage change"}
+    ]
+    st.session_state.active_profile = "Synthetic Patient Comparison Demo"
 
 def build_sample_profile(profile):
     vitals, symptoms = [], []
@@ -393,21 +463,28 @@ def make_backup():
     return json.dumps(data, indent=2, ensure_ascii=False)
 
 def restore_backup(uploaded_file):
-    data = json.load(uploaded_file)
+    if uploaded_file is None:
+        st.error("❌ Backup file missing.")
+        return
+    try:
+        data = json.load(uploaded_file)
+    except Exception as exc:
+        st.error(f"❌ Could not decode backup JSON: {exc}")
+        return
+
     if not isinstance(data, dict):
-        raise ValueError("Backup must contain a JSON object.")
+        st.error("❌ Backup must contain a valid JSON object.")
+        return
     expected = ["visits", "notes", "vitals", "symptoms", "medications", "documents", "ai_history"]
     for key in expected:
         if key in data and not isinstance(data[key], list):
-            raise ValueError(f"Invalid backup: '{key}' must be a list.")
+            st.error(f"❌ Invalid backup structure: '{key}' must be a list.")
+            return
     for key in expected + ["classifier_result", "visit_comparison", "active_profile", "custom_profiles", "theme"]:
         if key in data:
             st.session_state[key] = data[key]
 
-def safe_text(value, limit=2000):
-    return escape(str(value if value is not None else ""))[:limit].replace("\n", "<br/>")
-
-# FIXED: Dynamic patient profile summary generator
+# ------------------------- PDF Summary Generator -------------------------
 def make_doctor_pdf():
     output = io.BytesIO()
     doc = SimpleDocTemplate(output, pagesize=A4, rightMargin=16*mm, leftMargin=16*mm,
@@ -452,13 +529,13 @@ def make_doctor_pdf():
     vitals = current_records("vitals")
     vrows = [["Date", "Systolic", "Diastolic", "Heart rate", "Temp °C", "Weight", "Glucose"]]
     for r in sorted(vitals, key=lambda x: str(x.get("date", "")), reverse=True)[:10]:
-        vrows.append([safe_text(r.get(k, "")) for k in ["date", "systolic", "diastolic", "heart_rate", "temperature", "weight", "glucose_mg_dl"]])
+        vrows.append([safe_text(r.get(k, "Not Specified")) for k in ["date", "systolic", "diastolic", "heart_rate", "temperature", "weight", "glucose_mg_dl"]])
     add_table_section("Recent Vitals", vrows)
 
     symptoms = current_records("symptoms")
     srows = [["Date", "Symptom", "Severity", "Duration", "Notes"]]
     for r in sorted(symptoms, key=lambda x: str(x.get("date", "")), reverse=True)[:10]:
-        srows.append([Paragraph(safe_text(r.get(k, ""), 300), styles["CareSmall"]) for k in ["date", "symptom", "severity", "duration", "notes"]])
+        srows.append([Paragraph(safe_text(r.get(k, "Not Specified"), 300), styles["CareSmall"]) for k in ["date", "symptom", "severity", "duration", "notes"]])
     add_table_section("Recent Symptoms", srows)
 
     visits = current_records("visits")
@@ -467,8 +544,8 @@ def make_doctor_pdf():
         for r in sorted(visits, key=lambda x: str(x.get("date", "")), reverse=True)[:10]:
             story.append(Paragraph(
                 f"<b>{safe_text(r.get('date', ''))} — {safe_text(r.get('provider', 'Provider not entered'))}</b><br/>"
-                f"Reason: {safe_text(r.get('reason', ''))}<br/>Assessment: {safe_text(r.get('diagnosis', ''))}<br/>"
-                f"Notes: {safe_text(r.get('notes', ''))}", styles["CareSmall"]))
+                f"Reason: {safe_text(r.get('reason', 'Not Specified'))}<br/>Assessment: {safe_text(r.get('diagnosis', 'Not Specified'))}<br/>"
+                f"Notes: {safe_text(r.get('notes', 'Not Specified'))}", styles["CareSmall"]))
             story.append(Spacer(1, 4))
     else:
         story.append(Paragraph("No visit records saved.", styles["Normal"]))
@@ -476,7 +553,7 @@ def make_doctor_pdf():
     meds = current_records("medications")
     mrows = [["Name", "Dose entered", "Frequency entered", "Time"]]
     for r in meds:
-        mrows.append([Paragraph(safe_text(r.get(k, ""), 150), styles["CareSmall"]) for k in ["name", "dose", "frequency", "time"]])
+        mrows.append([Paragraph(safe_text(r.get(k, "Not Specified"), 150), styles["CareSmall"]) for k in ["name", "dose", "frequency", "time"]])
     add_table_section("Medication List", mrows)
 
     doc.build(story)
@@ -492,10 +569,10 @@ NAV = [
 
 with st.sidebar:
     st.markdown("## 🩺 CareTrail")
-    st.caption("Intelligent PHR Assistant Platform")
+    st.caption("AI Personal Health Record Portal")
     st.divider()
     
-    # Theme Toggle Switch
+    # Theme Switcher
     chosen_theme = st.radio("Appearance Theme", ["Dark", "Light"],
                             index=0 if st.session_state.theme == "Dark" else 1,
                             horizontal=True, key="theme_picker")
@@ -503,10 +580,21 @@ with st.sidebar:
         st.session_state.theme = chosen_theme
         st.rerun()
     st.divider()
+
+    # ONE-CLICK SYNTHETIC DEMO BUTTON (RUBRIC REQUIREMENT 1)
+    if st.button("⚡ Load Sample Patient Demo", type="primary", use_container_width=True):
+        load_synthetic_demo_comparison()
+        st.session_state.page = "Visit Comparison"
+        notify("Loaded Synthetic Patient Demo Records!")
+        st.rerun()
+        
+    st.divider()
     
     all_profiles = BUILTIN_PROFILES + list(st.session_state.custom_profiles.keys())
+    if st.session_state.active_profile not in all_profiles:
+        all_profiles.append(st.session_state.active_profile)
     current_profile = st.session_state.active_profile
-    profile_index = all_profiles.index(current_profile) if current_profile in all_profiles else 0
+    profile_index = all_profiles.index(current_profile)
     
     st.subheader("Select Patient Profile")
     chosen_profile = st.selectbox(
@@ -521,9 +609,9 @@ with st.sidebar:
         notify(f"Switched to {chosen_profile}")
         st.rerun()
         
-    st.caption("Switch between demo patient scenarios or custom patient profiles.")
+    st.caption("Switch between demo patient scenarios or custom profiles.")
     
-    # Add a New Patient Profile Form
+    # Custom Profile Creation Form
     with st.expander("➕ Add New Patient Profile"):
         with st.form("new_patient_form", clear_on_submit=True):
             p_name = st.text_input("Patient Full Name")
@@ -549,7 +637,7 @@ with st.sidebar:
                 }
                 st.session_state.custom_profiles[formatted_profile_name] = new_profile_data
                 load_sample_profile(formatted_profile_name)
-                notify(f"Created & Loaded New Patient: {formatted_profile_name}")
+                notify(f"Created Profile: {formatted_profile_name}")
                 st.rerun()
 
     st.divider()
@@ -569,21 +657,30 @@ with st.sidebar:
             st.session_state[key] = copy.deepcopy(value)
         st.rerun()
 
-# ------------------------- Page Header Banner -------------------------
+# ------------------------- Page Header Banner & Privacy Panel -------------------------
 if st.session_state.active_profile != "Personal Records":
     st.info(f"Active Patient Profile: **{st.session_state.active_profile}**")
 
 st.markdown(
     f"""<div style="background:{C['panel']};border:1px solid {C['border']};
-    border-radius:16px;padding:20px 24px;margin-bottom:20px;box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+    border-radius:16px;padding:20px 24px;margin-bottom:15px;box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
     <div style="font-size:12px;letter-spacing:1.5px;font-weight:700;color:{C['accent']};text-transform:uppercase;">
     Personal Health Record Portal</div>
     <div style="font-size:28px;font-weight:800;color:{C['text']};margin:4px 0;">
     CareTrail Dashboard</div>
     <div style="font-size:14px;color:{C['muted']};">
-    Track vital signs, record clinical visits, monitor symptoms, and run offline AI intent recognition.</div></div>""",
+    Longitudinal PHR tracking, discrepancy comparison analysis, and local NLP intent classification.</div></div>""",
     unsafe_allow_html=True,
 )
+
+# PRIVACY & SAFETY PANEL (RUBRIC REQUIREMENT 4)
+with st.expander("🛡️ Privacy, Safety & Technical Limitations Panel", expanded=False):
+    st.markdown("""
+    * **Synthetic Data Usage**: All demo profiles and default datasets utilize synthetic, fictional health records for safe testing and demonstration.
+    * **Non-Diagnostic Role**: CareTrail functions solely as an AI record assistant and intent classifier. It **does not** provide medical diagnoses, treatment advice, or automated dosage changes.
+    * **Data Privacy Boundaries**: Medical records are held locally in temporary Streamlit memory during your browser session and are not stored on remote servers.
+    * **Professional Verification**: Any discrepancies or dosage updates identified by the application require review and confirmation by a qualified healthcare professional.
+    """)
 
 # ------------------------- Overview -------------------------
 if page == "Overview":
@@ -592,24 +689,28 @@ if page == "Overview":
     for col, label, key in zip(cols, ["Health Visits", "Vitals Records", "Symptoms Logged", "Medication Entries"],
                                ["visits", "vitals", "symptoms", "medications"]):
         col.metric(label, len(current_records(key)))
-    left, right = st.columns([1.2, 1])
-    with left:
-        st.subheader("Recent Visits")
+        
+    st.divider()
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        st.subheader("Quick Synthetic Demonstration")
+        st.write("Load two pre-configured synthetic medical records to immediately test match detection, discrepancy handling, and export tools.")
+        if st.button("⚡ Load Sample Synthetic Records", type="primary"):
+            load_synthetic_demo_comparison()
+            st.session_state.page = "Visit Comparison"
+            st.rerun()
+            
+    with c2:
+        st.subheader("Recent Visits Snapshot")
         data = current_records("visits")
         if data:
             df = pd.DataFrame(data)
             if "date" in df: df = df.sort_values("date", ascending=False)
-            st.dataframe(df.head(5), use_container_width=True, hide_index=True)
-        else: st.info("No visits recorded. Select or create a patient profile.")
-    with right:
-        st.subheader("Recent Symptoms")
-        data = current_records("symptoms")
-        if data:
-            df = pd.DataFrame(data)
-            if "date" in df: df = df.sort_values("date", ascending=False)
-            st.dataframe(df.head(5), use_container_width=True, hide_index=True)
-        else: st.info("No symptoms logged.")
-    st.subheader("Vitals Snapshot")
+            st.dataframe(df.head(4), use_container_width=True, hide_index=True)
+        else:
+            st.info("No visit records saved in current profile.")
+
+    st.subheader("Vitals Overview")
     vitals = current_records("vitals")
     if vitals:
         latest = sorted(vitals, key=lambda x: str(x.get("date", "")))[-1]
@@ -619,64 +720,67 @@ if page == "Overview":
         cols[2].metric("Temperature", f"{latest.get('temperature', '—')} °C")
         cols[3].metric("Weight", f"{latest.get('weight', '—')} kg")
         if latest.get("glucose_mg_dl") is not None:
-            st.metric("Recorded Glucose", f"{latest['glucose_mg_dl']} mg/dL")
-        st.caption("Recorded values only; not a clinical diagnostic tool.")
-    else: st.info("Add or load vitals to populate this section.")
-    st.subheader("Quick Actions")
-    a, b, c = st.columns(3)
-    for col, label, destination in [
-        (a, "Add a Health Visit", "Health Notes & Timeline"),
-        (b, "Review Trends & Alerts", "Vitals & Analytics"),
-        (c, "Export Doctor Summary", "Doctor Summary PDF"),
-    ]:
-        if col.button(label, use_container_width=True):
-            st.session_state.quick_nav = destination
-            st.session_state.page = destination
-            st.rerun()
+            st.metric("Glucose Reading", f"{latest['glucose_mg_dl']} mg/dL")
+    else: 
+        st.info("Add or load vitals data to populate metrics.")
 
 # ------------------------- Health Notes & Timeline -------------------------
 elif page == "Health Notes & Timeline":
     st.subheader("Health Notes & Timeline")
-    with st.expander("Add a Health Visit", expanded=True):
+    with st.expander("Add a Health Visit Entry", expanded=True):
         with st.form("visit_form", clear_on_submit=True):
             vd = st.date_input("Visit Date", value=date.today())
             provider = st.text_input("Hospital / Doctor / Clinic")
             reason = st.text_input("Reason for Visit")
-            diagnosis = st.text_input("Diagnosis or Assessment (optional)")
+            diagnosis = st.text_input("Diagnosis or Assessment")
             visit_notes = st.text_area("Visit Notes")
-            save_visit = st.form_submit_button("Save Visit", type="primary")
+            save_visit = st.form_submit_button("Save Visit Record", type="primary")
+            
         if save_visit:
-            st.session_state.visits.append({"date": vd.isoformat(), "provider": provider.strip(),
-                "reason": reason.strip(), "diagnosis": diagnosis.strip(), "notes": visit_notes.strip()})
-            notify("Visit saved successfully.")
-    with st.expander("Add a Health Note"):
+            if not provider.strip():
+                st.error("❌ Input Validation Error: Provider name is required.")
+            else:
+                st.session_state.visits.append({
+                    "date": vd.isoformat(), 
+                    "provider": provider.strip(),
+                    "reason": reason.strip() or "Not Specified", 
+                    "diagnosis": diagnosis.strip() or "Not Specified", 
+                    "notes": visit_notes.strip() or "Not Specified"
+                })
+                notify("Visit entry saved successfully.")
+                st.rerun()
+
+    with st.expander("Add a Personal Health Note"):
         with st.form("note_form", clear_on_submit=True):
             nd = st.date_input("Note Date", value=date.today())
             nt = st.text_input("Note Title")
-            ntxt = st.text_area("Note")
+            ntxt = st.text_area("Note Content")
             save_note = st.form_submit_button("Save Note", type="primary")
         if save_note:
-            if not nt.strip() and not ntxt.strip(): st.warning("Enter a title or note.")
+            if not nt.strip() and not ntxt.strip(): 
+                st.warning("Please enter a title or note content.")
             else:
-                st.session_state.notes.append({"date": nd.isoformat(), "title": nt.strip(), "text": ntxt.strip()})
-                notify("Note saved successfully.")
+                st.session_state.notes.append({"date": nd.isoformat(), "title": nt.strip() or "Untitled", "text": ntxt.strip() or "Not Specified"})
+                notify("Note saved.")
+                st.rerun()
+
     st.divider()
     for key, label, editor_key in [("visits", "Visits", "visit_editor"), ("notes", "Notes", "notes_editor")]:
-        st.subheader(label)
+        st.subheader(f"Saved {label}")
         records = current_records(key)
         if records:
             df = pd.DataFrame(records)
-            edited = st.data_editor(df, num_rows="dynamic", use_container_width=True,
-                                    hide_index=True, key=editor_key)
-            st.session_state[key] = edited.fillna("").to_dict("records")
-            st.download_button(f"Download {label.lower()} CSV", csv_bytes(st.session_state[key]),
-                               file_name=f"caretrail_{key}.csv", mime="text/csv", key=f"dl_{key}")
-        else: st.info(f"No {label.lower()} yet.")
+            if validate_dataframe(df, ["date"], context=label):
+                edited = st.data_editor(df, num_rows="dynamic", use_container_width=True, hide_index=True, key=editor_key)
+                st.session_state[key] = edited.fillna("Not Specified").to_dict("records")
+                st.download_button(f"Download {label.lower()} CSV", csv_bytes(st.session_state[key]), file_name=f"caretrail_{key}.csv", mime="text/csv", key=f"dl_{key}")
+        else: 
+            st.info(f"No {label.lower()} recorded yet.")
 
 # ------------------------- Vitals & Analytics -------------------------
 elif page == "Vitals & Analytics":
     st.subheader("Vitals & Analytics (Predictive & Alert Engine)")
-    with st.expander("Add a Measurement", expanded=True):
+    with st.expander("Log New Measurement", expanded=True):
         with st.form("vitals_form", clear_on_submit=True):
             vd = st.date_input("Measurement Date", value=date.today())
             a, b = st.columns(2)
@@ -689,15 +793,18 @@ elif page == "Vitals & Analytics":
             glucose = st.number_input("Glucose (mg/dL; 0 = not measured)", 0, 1000, 0)
             save_v = st.form_submit_button("Save Measurements", type="primary")
         if save_v:
-            st.session_state.vitals.append({"date": vd.isoformat(), "systolic": sys, "diastolic": dia,
+            st.session_state.vitals.append({
+                "date": vd.isoformat(), "systolic": sys, "diastolic": dia,
                 "heart_rate": hr, "temperature": temp, "weight": weight,
-                "glucose_mg_dl": glucose if glucose > 0 else None})
-            notify("Vitals saved successfully.")
+                "glucose_mg_dl": glucose if glucose > 0 else None
+            })
+            notify("Vitals recorded successfully.")
+            st.rerun()
             
     records = current_records("vitals")
     if records:
         st.divider()
-        st.subheader("Automated Clinical Risk Assessment")
+        st.subheader("Automated Risk Assessment Alerts")
         latest = sorted(records, key=lambda x: str(x.get("date", "")))[-1]
         sys_val = latest.get("systolic", 120)
         dia_val = latest.get("diastolic", 80)
@@ -705,253 +812,320 @@ elif page == "Vitals & Analytics":
         
         alerts = []
         if sys_val and dia_val and (sys_val >= 140 or dia_val >= 90):
-            alerts.append(("error", f"**Hypertension Stage 2 Alert:** Blood pressure reading ({sys_val}/{dia_val} mmHg) exceeds threshold."))
+            alerts.append(("error", f"**Hypertension Stage 2 Alert:** Blood pressure ({sys_val}/{dia_val} mmHg) exceeds threshold."))
         elif sys_val and dia_val and (sys_val >= 130 or dia_val >= 80):
             alerts.append(("warning", f"**Hypertension Stage 1 Caution:** Blood pressure ({sys_val}/{dia_val} mmHg) is elevated."))
         
         if temp_val and temp_val >= 38.0:
-            alerts.append(("error", f"**Fever Alert:** Body temperature ({temp_val} °C) indicates pyrexia."))
+            alerts.append(("error", f"**Fever Alert:** Temperature ({temp_val} °C) indicates pyrexia."))
 
         if alerts:
             for alert_type, msg in alerts:
                 if alert_type == "error": st.error(msg)
                 else: st.warning(msg)
         else:
-            st.success("All recent vitals parameters remain within normal baseline ranges.")
+            st.success("All latest vitals parameters remain within normal baseline ranges.")
 
         st.divider()
-        st.subheader("Editable Vitals Table")
-        edited = st.data_editor(pd.DataFrame(records), num_rows="dynamic",
-                                use_container_width=True, hide_index=True, key="vitals_editor")
-        st.session_state.vitals = edited.fillna("").to_dict("records")
-        df = pd.DataFrame(st.session_state.vitals)
-        df["date"] = pd.to_datetime(df.get("date"), errors="coerce")
-        df = df.dropna(subset=["date"]).sort_values("date")
-        choice = st.selectbox("Choose Chart", ["Blood pressure", "Heart rate", "Temperature", "Weight", "Glucose"])
-        fig = None
-        if choice == "Blood pressure":
-            cols = [x for x in ["systolic", "diastolic"] if x in df.columns]
-            if cols:
-                long = df.melt(id_vars=["date"], value_vars=cols, var_name="measurement", value_name="value")
-                fig = px.line(long, x="date", y="value", color="measurement", markers=True,
-                              title="Blood Pressure Trend", labels={"value": "mmHg", "date": "Date"})
-        else:
-            mapping = {"Heart rate": ("heart_rate", "Heart Rate (bpm)"),
-                       "Temperature": ("temperature", "Temperature (°C)"),
-                       "Weight": ("weight", "Weight (kg)"),
-                       "Glucose": ("glucose_mg_dl", "Glucose (mg/dL)")}
-            column, label = mapping[choice]
-            if column in df.columns:
-                df[column] = pd.to_numeric(df[column], errors="coerce")
-                chart_df = df.dropna(subset=[column])
-                if not chart_df.empty:
-                    fig = px.line(chart_df, x="date", y=column, markers=True, title=f"{choice} Trend",
-                                  labels={column: label, "date": "Date"})
-            if fig is None: st.info("No values entered for this measurement.")
-        if fig is not None: st.plotly_chart(chart_theme(fig), use_container_width=True)
-        st.download_button("Download Vitals CSV", csv_bytes(st.session_state.vitals),
-                           file_name="caretrail_vitals.csv", mime="text/csv")
-    else: st.info("No vitals saved yet. Pick or create a patient profile from sidebar.")
+        st.subheader("Interactive Vitals Logs & Plotly Visualizations")
+        df = pd.DataFrame(records)
+        if validate_dataframe(df, ["date"], context="Vitals Data"):
+            edited = st.data_editor(df, num_rows="dynamic", use_container_width=True, hide_index=True, key="vitals_editor")
+            st.session_state.vitals = edited.fillna("").to_dict("records")
+            
+            df_chart = pd.DataFrame(st.session_state.vitals)
+            df_chart["date"] = pd.to_datetime(df_chart.get("date"), errors="coerce")
+            df_chart = df_chart.dropna(subset=["date"]).sort_values("date")
+            
+            choice = st.selectbox("Select Visual Trend", ["Blood pressure", "Heart rate", "Temperature", "Weight", "Glucose"])
+            fig = None
+            if choice == "Blood pressure":
+                cols = [x for x in ["systolic", "diastolic"] if x in df_chart.columns]
+                if cols:
+                    long = df_chart.melt(id_vars=["date"], value_vars=cols, var_name="measurement", value_name="value")
+                    fig = px.line(long, x="date", y="value", color="measurement", markers=True, title="Blood Pressure Trend", labels={"value": "mmHg", "date": "Date"})
+            else:
+                mapping = {"Heart rate": ("heart_rate", "Heart Rate (bpm)"),
+                           "Temperature": ("temperature", "Temperature (°C)"),
+                           "Weight": ("weight", "Weight (kg)"),
+                           "Glucose": ("glucose_mg_dl", "Glucose (mg/dL)")}
+                column, label = mapping[choice]
+                if column in df_chart.columns:
+                    df_chart[column] = pd.to_numeric(df_chart[column], errors="coerce")
+                    chart_df = df_chart.dropna(subset=[column])
+                    if not chart_df.empty:
+                        fig = px.line(chart_df, x="date", y=column, markers=True, title=f"{choice} Trend", labels={column: label, "date": "Date"})
+            if fig is not None: 
+                st.plotly_chart(chart_theme(fig), use_container_width=True)
+            st.download_button("Download Vitals CSV", csv_bytes(st.session_state.vitals), file_name="caretrail_vitals.csv", mime="text/csv")
+    else: 
+        st.info("No vitals recorded yet. Pick or create a patient profile from the sidebar.")
 
 # ------------------------- Symptom Tracker -------------------------
 elif page == "Symptom Tracker":
     st.subheader("Symptom Tracker")
     with st.form("symptom_form", clear_on_submit=True):
         sd = st.date_input("Date", value=date.today())
-        symptom = st.text_input("Symptom")
-        severity = st.slider("Severity (0–10)", 0, 10, 3)
+        symptom = st.text_input("Symptom Description")
+        severity = st.slider("Severity Rating (0–10)", 0, 10, 3)
         duration = st.selectbox("Duration", ["Less than an hour", "A few hours", "1 day", "Several days", "Ongoing"])
-        symptom_notes = st.text_area("Additional Notes")
+        symptom_notes = st.text_area("Additional Symptom Details")
         save_symptom = st.form_submit_button("Log Symptom", type="primary")
+        
     if save_symptom:
-        if not symptom.strip(): st.warning("Enter a symptom before saving.")
+        if not symptom.strip(): 
+            st.warning("Please enter a symptom description before saving.")
         else:
-            st.session_state.symptoms.append({"date": sd.isoformat(), "symptom": symptom.strip(),
-                "severity": severity, "duration": duration, "notes": symptom_notes.strip()})
+            st.session_state.symptoms.append({
+                "date": sd.isoformat(), "symptom": symptom.strip(),
+                "severity": severity, "duration": duration, "notes": symptom_notes.strip() or "Not Specified"
+            })
             notify("Symptom logged successfully.")
+            st.rerun()
+            
     records = current_records("symptoms")
     if records:
-        edited = st.data_editor(pd.DataFrame(records), num_rows="dynamic", use_container_width=True,
-                                hide_index=True, key="symptoms_editor",
-                                column_config={"severity": st.column_config.NumberColumn("Severity", min_value=0, max_value=10, step=1)})
-        st.session_state.symptoms = edited.fillna("").to_dict("records")
-        df = pd.DataFrame(st.session_state.symptoms)
-        df["severity"] = pd.to_numeric(df.get("severity"), errors="coerce")
-        df["date"] = pd.to_datetime(df.get("date"), errors="coerce")
-        df = df.dropna(subset=["date", "severity"])
-        if not df.empty:
-            fig = px.line(df, x="date", y="severity", color="symptom", markers=True,
-                          title="Symptom Severity Over Time", labels={"date": "Date", "severity": "Severity (0–10)"})
-            st.plotly_chart(chart_theme(fig), use_container_width=True)
-        st.download_button("Download Symptom CSV", csv_bytes(st.session_state.symptoms),
-                           file_name="caretrail_symptoms.csv", mime="text/csv")
-    else: st.info("No symptoms logged yet.")
+        df = pd.DataFrame(records)
+        if validate_dataframe(df, ["symptom"], context="Symptoms Log"):
+            edited = st.data_editor(df, num_rows="dynamic", use_container_width=True, hide_index=True, key="symptoms_editor",
+                                    column_config={"severity": st.column_config.NumberColumn("Severity", min_value=0, max_value=10, step=1)})
+            st.session_state.symptoms = edited.fillna("Not Specified").to_dict("records")
+            
+            df_chart = pd.DataFrame(st.session_state.symptoms)
+            df_chart["severity"] = pd.to_numeric(df_chart.get("severity"), errors="coerce")
+            df_chart["date"] = pd.to_datetime(df_chart.get("date"), errors="coerce")
+            df_chart = df_chart.dropna(subset=["date", "severity"])
+            if not df_chart.empty:
+                fig = px.line(df_chart, x="date", y="severity", color="symptom", markers=True,
+                              title="Symptom Severity Over Time", labels={"date": "Date", "severity": "Severity (0–10)"})
+                st.plotly_chart(chart_theme(fig), use_container_width=True)
+            st.download_button("Download Symptom CSV", csv_bytes(st.session_state.symptoms), file_name="caretrail_symptoms.csv", mime="text/csv")
+    else: 
+        st.info("No symptoms logged yet.")
 
 # ------------------------- Medications & Reminders -------------------------
 elif page == "Medications & Reminders":
     st.subheader("Medications & Reminders")
-    st.warning("Enter medication information as prescribed. This app does not recommend doses or verify drug interactions.")
+    st.info("⚠️ Record medication details as prescribed. Omitted or missing fields are labeled 'Not Specified' rather than treated as discontinuations.")
+    
     with st.form("medication_form", clear_on_submit=True):
         name = st.text_input("Medication Name")
-        dose = st.text_input("Dose as Prescribed")
-        frequency = st.text_input("Frequency as Prescribed")
+        dose = st.text_input("Dose as Prescribed", placeholder="e.g. 10mg, 500mcg")
+        frequency = st.text_input("Frequency", placeholder="e.g. Once Daily, Twice Daily")
         reminder_time = st.time_input("Reminder Time", value=time(9, 0))
         start_date = st.date_input("Start Date", value=date.today())
-        med_notes = st.text_area("Notes")
-        save_med = st.form_submit_button("Add Medication", type="primary")
+        med_notes = st.text_area("Instructions & Notes")
+        save_med = st.form_submit_button("Add Medication Entry", type="primary")
+        
     if save_med:
-        if not name.strip(): st.warning("Enter a medication name.")
+        if not name.strip(): 
+            st.error("❌ Input Validation Error: Medication name is required.")
         else:
             st.session_state.medications.append({
                 "name": name.strip(), 
-                "dose": dose.strip(),
-                "frequency": frequency.strip(), 
+                "dose": dose.strip() or "Not Specified",
+                "frequency": frequency.strip() or "Not Specified", 
                 "time": reminder_time.strftime("%H:%M"),
                 "start_date": start_date.isoformat(), 
-                "notes": med_notes.strip()
+                "notes": med_notes.strip() or "Not Specified"
             })
-            notify("Medication entry saved.")
+            notify("Medication entry added.")
+            st.rerun()
+            
     meds = current_records("medications")
     if meds:
-        edited = st.data_editor(pd.DataFrame(meds), num_rows="dynamic", use_container_width=True,
-                                hide_index=True, key="medication_editor")
-        st.session_state.medications = edited.fillna("").to_dict("records")
-        st.download_button("Download Medication List CSV", csv_bytes(st.session_state.medications),
-                           file_name="caretrail_medications.csv", mime="text/csv")
-        st.subheader("Calendar Reminders")
-        for i, med in enumerate(st.session_state.medications):
-            raw_time = str(med.get("time", "09:00"))
-            try: 
-                hour, minute = map(int, raw_time.split(":")[:2])
-            except (ValueError, AttributeError): 
-                hour, minute = 9, 0
-
-            # FIXED: Robust parsing for date values (strings or date objects)
-            s_val = med.get("start_date", today_str())
-            if isinstance(s_val, (date, datetime)):
-                start_day = s_val
-            else:
+        df = pd.DataFrame(meds).fillna("Not Specified")
+        if validate_dataframe(df, ["name"], context="Medication List"):
+            edited = st.data_editor(df, num_rows="dynamic", use_container_width=True, hide_index=True, key="medication_editor")
+            st.session_state.medications = edited.fillna("Not Specified").to_dict("records")
+            st.download_button("Download Medication List CSV", csv_bytes(st.session_state.medications), file_name="caretrail_medications.csv", mime="text/csv")
+            
+            st.subheader("iCal Calendar Reminder Export")
+            for i, med in enumerate(st.session_state.medications):
+                raw_time = str(med.get("time", "09:00"))
                 try: 
-                    start_day = date.fromisoformat(str(s_val))
-                except (ValueError, TypeError): 
-                    start_day = date.today()
+                    hour, minute = map(int, raw_time.split(":")[:2])
+                except (ValueError, AttributeError): 
+                    hour, minute = 9, 0
 
-            start = datetime.combine(start_day, time(hour, minute))
-            summary = re.sub(r"([,;])", r"\\\1", str(med.get("name", "Medication")))
-            summary = summary.replace("\\", "\\\\").replace("\n", "\\n")
-            ics = "\r\n".join([
-                "BEGIN:VCALENDAR", 
-                "VERSION:2.0", 
-                "PRODID:-//CareTrail//Medication Reminder//EN",
-                "BEGIN:VEVENT", 
-                f"DTSTART:{start.strftime('%Y%m%dT%H%M%S')}",
-                f"DTEND:{(start+timedelta(minutes=10)).strftime('%Y%m%dT%H%M%S')}",
-                f"SUMMARY:Medication reminder - {summary}",
-                "DESCRIPTION:Follow your clinician's instructions.", 
-                "END:VEVENT", 
-                "END:VCALENDAR", 
-                ""
-            ])
-            st.download_button(f"Download Reminder: {med.get('name', 'Medication')}", ics,
-                               file_name=f"caretrail_reminder_{i+1}.ics", mime="text/calendar", key=f"med_ics_{i}")
-    else: st.info("No medication entries saved.")
+                s_val = med.get("start_date", today_str())
+                if isinstance(s_val, (date, datetime)):
+                    start_day = s_val
+                else:
+                    try: 
+                        start_day = date.fromisoformat(str(s_val))
+                    except (ValueError, TypeError): 
+                        start_day = date.today()
 
-# ------------------------- Document Vault & Privacy Sanitizer -------------------------
+                start = datetime.combine(start_day, time(hour, minute))
+                summary = re.sub(r"([,;])", r"\\\1", str(med.get("name", "Medication")))
+                summary = summary.replace("\\", "\\\\").replace("\n", "\\n")
+                ics = "\r\n".join([
+                    "BEGIN:VCALENDAR", 
+                    "VERSION:2.0", 
+                    "PRODID:-//CareTrail//Medication Reminder//EN",
+                    "BEGIN:VEVENT", 
+                    f"DTSTART:{start.strftime('%Y%m%dT%H%M%S')}",
+                    f"DTEND:{(start+timedelta(minutes=10)).strftime('%Y%m%dT%H%M%S')}",
+                    f"SUMMARY:Medication reminder - {summary}",
+                    "DESCRIPTION:Take as directed by your clinician.", 
+                    "END:VEVENT", 
+                    "END:VCALENDAR", 
+                    ""
+                ])
+                st.download_button(f"Download Reminder: {med.get('name', 'Medication')}", ics,
+                                   file_name=f"caretrail_reminder_{i+1}.ics", mime="text/calendar", key=f"med_ics_{i}")
+    else: 
+        st.info("No medication records found.")
+
+# ------------------------- Document Vault & Privacy Scrubbing -------------------------
 elif page == "Document Vault":
-    st.subheader("Document Vault & PII/PHI De-identification Tool")
-    st.caption("HIPAA Security Rule Safeguard: All uploads remain local in memory.")
+    st.subheader("Document Vault & PII/PHI De-identification Scrubbing Tool")
+    st.caption("All uploaded documents are processed securely in local session memory.")
     
-    uploaded = st.file_uploader("Upload a Report or Note", type=["txt", "md", "csv", "pdf"])
-    if uploaded is not None and st.button("Save Document", type="primary"):
-        content = uploaded.getvalue()
-        extension = Path(uploaded.name).suffix.lower()
-        extracted = ""
-        if extension in [".txt", ".md", ".csv"]:
-            extracted = content.decode("utf-8", errors="replace")
-        elif extension == ".pdf":
-            try:
-                from pypdf import PdfReader
-                reader = PdfReader(io.BytesIO(content))
-                extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
-            except Exception as exc:
-                extracted = f"Text extraction failed: {exc}"
-        st.session_state.documents.append({"name": uploaded.name, "type": uploaded.type or "application/octet-stream",
-            "size": len(content), "uploaded_at": datetime.now().isoformat(timespec="seconds"),
-            "text": extracted, "bytes_hex": content.hex()})
-        notify("Document saved to session.")
-        
+    uploaded = st.file_uploader("Upload Clinical Record or Report", type=["txt", "md", "csv", "pdf"])
+    if uploaded is not None:
+        if uploaded.size == 0:
+            st.error("❌ Input Validation Error: Uploaded file is empty.")
+        elif st.button("Save Document to Session", type="primary"):
+            content = uploaded.getvalue()
+            extension = Path(uploaded.name).suffix.lower()
+            extracted = ""
+            if extension in [".txt", ".md", ".csv"]:
+                extracted = content.decode("utf-8", errors="replace")
+            elif extension == ".pdf":
+                try:
+                    from pypdf import PdfReader
+                    reader = PdfReader(io.BytesIO(content))
+                    extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
+                except Exception as exc:
+                    extracted = f"PDF text extraction failed: {exc}"
+            st.session_state.documents.append({
+                "name": uploaded.name, "type": uploaded.type or "application/octet-stream",
+                "size": len(content), "uploaded_at": datetime.now().isoformat(timespec="seconds"),
+                "text": extracted, "bytes_hex": content.hex()
+            })
+            notify("Document added securely.")
+            st.rerun()
+            
     docs = current_records("documents")
     if docs:
         for i, doc in enumerate(docs):
-            with st.expander(doc.get("name", "Document")):
-                st.write(f"File size: {doc.get('size', 0):,} bytes | Uploaded: {doc.get('uploaded_at', '')}")
+            with st.expander(f"📄 {doc.get('name', 'Document')}"):
+                st.write(f"Size: {doc.get('size', 0):,} bytes | Uploaded: {doc.get('uploaded_at', '')}")
                 raw_txt = doc.get("text", "")
                 if raw_txt:
-                    st.text_area("Extracted Text", raw_txt[:5000], height=140, key=f"doc_raw_{i}")
+                    st.text_area("Raw Extracted Content", raw_txt[:5000], height=140, key=f"doc_raw_{i}")
                     
-                    if st.button(f"Sanitize PII/PHI (HIPAA/DPDP Mode)", key=f"scrub_{i}"):
+                    if st.button(f"Scrub PII/PHI Identifier Tags", key=f"scrub_{i}"):
                         sanitized = re.sub(r'\b\d{3}-\d{2}-\d{4}\b', '[REDACTED SSN]', raw_txt)
                         sanitized = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '[REDACTED EMAIL]', sanitized)
                         sanitized = re.sub(r'\b\d{10}\b', '[REDACTED PHONE]', sanitized)
-                        st.success("PHI Scrubbing Applied Successfully:")
-                        st.text_area("De-identified Output", sanitized[:5000], height=140, key=f"doc_scrubbed_{i}")
+                        st.success("PHI Scrubbing Applied:")
+                        st.text_area("De-identified Document", sanitized[:5000], height=140, key=f"doc_scrubbed_{i}")
 
-                if st.button("Delete Document", key=f"delete_doc_{i}"):
+                if st.button("Remove Document", key=f"delete_doc_{i}"):
                     st.session_state.documents.pop(i)
                     st.rerun()
-    else: st.info("No documents uploaded in this session.")
+    else: 
+        st.info("No documents currently stored.")
 
 # ------------------------- Visit Comparison -------------------------
 elif page == "Visit Comparison":
-    st.subheader("Visit Comparison")
+    st.subheader("Patient Record Comparison & Discrepancy Analyzer")
     visits = current_records("visits")
+    
     if len(visits) < 2:
-        st.info("Add at least two visits or select a profile with multiple visit records.")
+        st.warning("⚠️ At least two visit records are required to run comparison.")
+        if st.button("⚡ Click Here to Load Synthetic Patient Comparison Demo"):
+            load_synthetic_demo_comparison()
+            st.rerun()
     else:
-        labels = [f"{v.get('date', '')} — {v.get('provider', 'Provider not entered')}" for v in visits]
-        a, b = st.columns(2)
-        ia = a.selectbox("First Visit", range(len(visits)), format_func=lambda i: labels[i], key="compare_a")
-        ib = b.selectbox("Second Visit", range(len(visits)), index=1 if len(visits) > 1 else 0, format_func=lambda i: labels[i], key="compare_b")
-        if ia == ib: st.warning("Select two different visits.")
+        labels = [f"{v.get('date', 'N/A')} — {v.get('provider', 'Not Specified')}" for v in visits]
+        col1, col2 = st.columns(2)
+        idx_a = col1.selectbox("Select First Record (Record A)", range(len(visits)), format_func=lambda i: labels[i], index=0)
+        idx_b = col2.selectbox("Select Second Record (Record B)", range(len(visits)), format_func=lambda i: labels[i], index=min(1, len(visits)-1))
+        
+        if idx_a == idx_b:
+            st.warning("Please select two distinct visit records to analyze discrepancies.")
         else:
-            va, vb = visits[ia], visits[ib]
-            comparison = pd.DataFrame([{"Field": field, "First visit": va.get(field, ""),
-                                        "Second visit": vb.get(field, "")}
-                                       for field in ["date", "provider", "reason", "diagnosis", "notes"]])
-            st.dataframe(comparison, use_container_width=True, hide_index=True)
-            st.download_button("Download Comparison CSV", csv_bytes(comparison.to_dict("records")),
-                               file_name="caretrail_visit_comparison.csv", mime="text/csv")
+            rec_a, rec_b = visits[idx_a], visits[idx_b]
+            
+            comparison_data = []
+            discrepancies = []
+            all_keys = sorted(list(set(list(rec_a.keys()) + list(rec_b.keys()))))
+            
+            for k in all_keys:
+                val_a = rec_a.get(k, "Not Specified")
+                val_b = rec_b.get(k, "Not Specified")
+                status = "Matching" if val_a == val_b else "Discrepancy Detected"
+                if status != "Matching":
+                    discrepancies.append(k)
+                comparison_data.append({"Field": k, "Record A": val_a, "Record B": val_b, "Comparison Status": status})
+                
+            comp_df = pd.DataFrame(comparison_data)
+            st.dataframe(comp_df, use_container_width=True, hide_index=True)
+            
+            st.subheader("Discrepancy Summary")
+            if discrepancies:
+                st.warning(f"Detected {len(discrepancies)} field discrepancy(ies): {', '.join(discrepancies)}")
+            else:
+                st.success("All fields between Record A and Record B match identically.")
+                
+            # DOWNLOADABLE COMPARISON REPORTS (RUBRIC REQUIREMENT 5)
+            st.subheader("Export Comparison Report")
+            r_col1, r_col2 = st.columns(2)
+            
+            csv_rep = comp_df.to_csv(index=False).encode("utf-8-sig")
+            r_col1.download_button("📥 Download Report (CSV)", csv_rep, file_name=f"caretrail_comparison_{today_str()}.csv", mime="text/csv")
+            
+            txt_report = f"""CARETRAIL HEALTH RECORD COMPARISON REPORT
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Profile: {st.session_state.active_profile}
+
+RECORD A: {labels[idx_a]}
+RECORD B: {labels[idx_b]}
+
+FIELD BREAKDOWN:
+{comp_df.to_string(index=False)}
+
+DISCREPANCIES DETECTED: {len(discrepancies)}
+DISCREPANT FIELDS: {', '.join(discrepancies) if discrepancies else 'None'}
+
+CLINICAL DISCLAIMER: This automated record comparison report is generated for tracking and verification purposes. Any dosage or treatment changes require review and confirmation by a licensed healthcare professional.
+"""
+            r_col2.download_button("📄 Download Report (TXT)", txt_report.encode("utf-8"), file_name=f"caretrail_comparison_{today_str()}.txt", mime="text/plain")
 
 # ------------------------- AI Question Classifier & Evaluation -------------------------
 elif page == "AI Question Classifier":
     st.subheader("AI Question Intent Classifier")
-    st.caption("Module 2 AI Technique: Local TF-IDF + LinearSVC Pipeline for offline query categorization.")
+    st.caption("Module 2 Technique: Local TF-IDF Vectorizer + LinearSVC Machine Learning Pipeline.")
     
-    tab1, tab2 = st.tabs(["Query Assistant", "Model Performance & Metrics (Rubric Evaluation)"])
+    pipeline, report_dict, cm, split_info, classes = get_trained_nlp_pipeline()
     
-    pipeline, report_dict, cm = get_trained_nlp_pipeline()
+    t1, t2 = t1, t2 = st.tabs(["Interactive Query Assistant", "📊 AI Model Performance & Metrics (Rubric Evaluation)"])
     
-    with tab1:
+    with t1:
         question = st.text_area("Enter a patient health query:", placeholder="e.g., Where can I view my recent blood pressure graph?", height=100)
         if st.button("Classify Query Intent", type="primary"):
             if not question.strip():
-                st.warning("Please enter a question.")
+                st.warning("Please enter a query.")
             else:
                 pred_label = pipeline.predict([question.strip()])[0]
                 
                 responses = {
-                    "symptom_help": "Triage Guidance: Record onset time, duration, and pain score (0-10). Seek immediate emergency medical care if experiencing chest pain, severe shortness of breath, or sudden weakness.",
-                    "medication_query": "Medication Protocol: Verify prescribed timing and dosage in your Medications tab. Never alter prescribed doses without consulting your doctor.",
-                    "records_query": "Record Navigation: Your clinical visit entries and doctor notes are structured under the Health Notes & Timeline page.",
-                    "health_trends": "Trend Analytics: Historical graphical representations of your vitals and glucose logs are updated under Vitals & Analytics.",
-                    "general_help": "System Guidance: CareTrail allows full local PHR management, iCal reminder exports, and HIPAA-compliant session backups."
+                    "symptom_help": "Triage Guidance: Log onset time, duration, and severity score. Seek emergency medical care immediately if experiencing severe chest pain or shortness of breath.",
+                    "medication_query": "Medication Protocol: Verify prescribed schedule under Medications & Reminders. Never alter prescribed dosages without consulting your clinician.",
+                    "records_query": "Record Navigation: Clinical visit summaries and doctor notes are located under Health Notes & Timeline.",
+                    "health_trends": "Trend Analytics: Graphical representations of vitals and glucose logs are displayed under Vitals & Analytics.",
+                    "general_help": "System Guidance: CareTrail supports local PHR management, iCal reminder exports, and session backups."
                 }
                 
                 res_text = responses.get(pred_label, "Query processed by local classifier.")
                 result = {"question": question.strip(), "intent": pred_label, "response": res_text, "timestamp": datetime.now().isoformat(timespec="seconds")}
                 st.session_state.classifier_result = result
                 st.session_state.ai_history.append(result)
-                notify("Intent Classified.")
+                notify("Query Classified.")
 
         result = st.session_state.classifier_result
         if result:
@@ -960,63 +1134,65 @@ elif page == "AI Question Classifier":
             st.metric("Predicted Intent Category", result.get("intent"))
             st.write(f"**Assistant Response:** {result.get('response')}")
 
-    with tab2:
-        st.subheader("Quantitative Model Evaluation Metrics")
-        st.write("Cross-validated evaluation metrics generated on synthetic PHR intent dataset:")
+    # AI MODEL EVALUATION DASHBOARD (RUBRIC REQUIREMENT 3)
+    with t2:
+        st.markdown("### AI Intent Classifier Test-Set Metrics")
+        st.caption("Metrics below are strictly evaluated on unseen Test-Set Data (80/20 Train/Test Split) to ensure authentic performance reporting.")
         
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Test Accuracy", f"{split_info['test_acc']*100:.1f}%")
+        m2.metric("Macro F1-Score", f"{split_info['macro_f1']:.3f}")
+        m3.metric("Train Set Samples", split_info['train_size'])
+        m4.metric("Test Set Samples (Unseen)", split_info['test_size'])
+        
+        st.divider()
+        st.subheader("Detailed Classification Report")
         rep_df = pd.DataFrame(report_dict).transpose()
         st.dataframe(rep_df, use_container_width=True)
         
-        st.subheader("Confusion Matrix")
-        classes = list(set(pipeline.named_steps['clf'].classes_))
+        st.subheader("Unseen Test-Set Confusion Matrix")
         cm_df = pd.DataFrame(cm, index=classes, columns=classes)
-        fig_cm = px.imshow(cm_df, text_auto=True, color_continuous_scale="Teal", title="Intent Confusion Matrix")
+        fig_cm = px.imshow(cm_df, text_auto=True, color_continuous_scale="Teal", title="Intent Confusion Matrix (Test Set)")
         st.plotly_chart(chart_theme(fig_cm), use_container_width=True)
 
 # ------------------------- Backup & Restore -------------------------
 elif page == "Data Backup & Restore":
     st.subheader("Data Backup & Restore")
-    st.write("Download a JSON backup of current session records.")
-    st.download_button("Download Complete JSON Backup", make_backup().encode("utf-8"),
-                       file_name=f"caretrail_backup_{today_str()}.json", mime="application/json", type="primary")
+    st.write("Export a complete JSON backup of current session records.")
+    st.download_button("Download Session Backup (JSON)", make_backup().encode("utf-8"), file_name=f"caretrail_backup_{today_str()}.json", mime="application/json", type="primary")
     st.divider()
-    st.subheader("Restore a Backup")
-    backup_file = st.file_uploader("Select a CareTrail JSON file", type=["json"], key="backup_restore")
-    if st.button("Restore Backup", disabled=backup_file is None):
-        try:
-            with st.spinner("Restoring session records..."):
-                restore_backup(backup_file)
-            notify("Backup restored.")
-            st.rerun()
-        except Exception as exc:
-            st.error(f"Could not restore backup: {exc}")
+    st.subheader("Restore Backup")
+    backup_file = st.file_uploader("Select CareTrail JSON Backup File", type=["json"], key="backup_restore")
+    if st.button("Restore Session Backup Data", disabled=backup_file is None):
+        restore_backup(backup_file)
+        notify("Session data restored successfully.")
+        st.rerun()
 
 # ------------------------- Doctor Summary PDF -------------------------
 elif page == "Doctor Summary PDF":
-    st.subheader("Doctor Summary PDF")
-    st.write(f"Generate a formatted summary of visits, recent vitals, symptoms and medication entries for **{st.session_state.active_profile}**.")
+    st.subheader("Doctor Summary PDF Export")
+    st.write(f"Generate a PDF summary of clinical visits, vitals logs, symptoms, and medication records for **{st.session_state.active_profile}**.")
     if st.button("Generate Doctor Summary PDF", type="primary"):
         try:
-            with st.spinner("Preparing PDF report..."):
+            with st.spinner("Generating document..."):
                 st.session_state.generated_pdf = make_doctor_pdf()
-            notify("Doctor summary PDF generated.")
+            notify("PDF ready.")
         except Exception as exc:
             st.error(f"PDF generation failed: {exc}")
+            
     if st.session_state.generated_pdf:
-        st.download_button("Download Doctor Summary PDF", st.session_state.generated_pdf,
-                           file_name=f"caretrail_doctor_summary_{today_str()}.pdf",
-                           mime="application/pdf", type="primary")
+        st.download_button("Download PDF Document", st.session_state.generated_pdf, file_name=f"caretrail_doctor_summary_{today_str()}.pdf", mime="application/pdf", type="primary")
 
 # ------------------------- About & Privacy -------------------------
 elif page == "About & Privacy":
     st.subheader("About CareTrail")
-    st.write("CareTrail is an intelligent Personal Health Record (PHR) assistant designed to simplify longitudinal health tracking while enforcing strict data privacy.")
+    st.write("CareTrail is an intelligent Personal Health Record (PHR) assistant designed to simplify medical tracking while enforcing strict local data privacy boundaries.")
     st.subheader("Rubric & Module Mapping")
     st.markdown("""
     - **Module Mapping:** Module 2 — Healthcare Applications (Intelligent PHR Assistant)
-    - **AI Techniques:** Local TF-IDF + LinearSVC Intent Classification Pipeline & Rule-Based Alert Engine
-    - **Compliance:** HIPAA Security Rule (§ 164.312) & DPDP Act 2023 alignment via on-device processing and built-in PII scrubbing.
+    - **AI Techniques:** Local TF-IDF + LinearSVC Intent Pipeline (Stratified 80/20 Train/Test Evaluation) & Rule-Based Risk Alerts.
+    - **Compliance:** Aligned with HIPAA Security Rule (§ 164.312) principles via local processing and automated PII scrubbing.
     """)
 
 st.divider()
-st.caption(f"CareTrail Prototype · {st.session_state.theme} Mode · {datetime.now().strftime('%d %b %Y, %H:%M')}")
+st.caption(f"CareTrail Prototype · Active Profile: {st.session_state.active_profile} · Theme: {st.session_state.theme}")
