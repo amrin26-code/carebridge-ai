@@ -24,7 +24,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.metrics import classification_report, confusion_matrix
 
 # =========================================================
-# CARETRAIL — Intelligent PHR Assistant Platform
+# CARETRAIL — Intelligent PHR Assistant Platform (Dark Theme)
 # =========================================================
 st.set_page_config(
     page_title="CareTrail | AI Personal Health Record Portal",
@@ -34,7 +34,6 @@ st.set_page_config(
 )
 
 DEFAULTS = {
-    "theme": "Light",
     "visits": [],
     "notes": [],
     "vitals": [],
@@ -44,7 +43,7 @@ DEFAULTS = {
     "classifier_result": None,
     "visit_comparison": None,
     "active_profile": "Personal Records",
-    "ai_demo_mode": False,
+    "custom_profiles": {},  # Stores user-created test patient profiles
     "ai_history": [],
     "generated_pdf": None,
     "page": "Overview",
@@ -54,28 +53,28 @@ for key, value in DEFAULTS.items():
     if key not in st.session_state:
         st.session_state[key] = copy.deepcopy(value)
 
-# ------------------------- Theme Palette -------------------------
+# ------------------------- Dark Theme Palette -------------------------
 C = {
-    "bg": "#FFFFFF",            
-    "panel": "#FFFFFF",         
-    "panel_alt": "#F8FAFC",     
-    "text": "#000000",          
-    "muted": "#475569",         
-    "border": "#CBD5E1",        
-    "accent": "#0D9488",        
-    "accent_hover": "#0F766E",  
-    "accent_text": "#FFFFFF",   
-    "input_bg": "#FFFFFF",      
-    "input_text": "#000000",    
-    "sidebar": "#F8FAFC",       
-    "sidebar_text": "#000000",  
-    "plot": "plotly_white",
+    "bg": "#0B0F19",            # Midnight Slate Background
+    "panel": "#111827",         # Dark Card Panels
+    "panel_alt": "#1F2937",     # Dark Card Highlight
+    "text": "#F9FAFB",          # Crisp White Text
+    "muted": "#9CA3AF",         # Cool Gray Muted Text
+    "border": "#334155",        # Dark Slate Border
+    "accent": "#14B8A6",        # Glowing Emerald Teal Accent
+    "accent_hover": "#2DD4BF",  # Bright Teal Hover
+    "accent_text": "#042F2E",   # Deep Green Accent Text
+    "input_bg": "#1F2937",      # Dark Input Fields
+    "input_text": "#F9FAFB",    # Light Input Text
+    "sidebar": "#090D16",       # Deep Navy Sidebar
+    "sidebar_text": "#F9FAFB",  # Light Sidebar Text
+    "plot": "plotly_dark",
 }
 
 st.markdown(
     f"""
     <style>
-    :root {{ color-scheme: light; }}
+    :root {{ color-scheme: dark; }}
     
     html, body, .stApp, [data-testid="stAppViewContainer"],
     [data-testid="stMain"], [data-testid="stMainBlockContainer"] {{
@@ -111,14 +110,14 @@ st.markdown(
         border: 1px solid {C["border"]} !important;
         border-radius: 12px !important;
         padding: 16px !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
     }}
     
     [data-testid="stExpander"] {{
         background-color: {C["panel"]} !important;
         border: 1px solid {C["border"]} !important;
         border-radius: 12px !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
     }}
     [data-testid="stExpander"] summary,
     [data-testid="stExpander"] summary *,
@@ -139,6 +138,11 @@ st.markdown(
         caret-color: {C["input_text"]} !important;
         border: 1px solid {C["border"]} !important;
         border-radius: 8px !important;
+    }}
+    .stApp input::placeholder, .stApp textarea::placeholder {{
+        color: {C["muted"]} !important;
+        -webkit-text-fill-color: {C["muted"]} !important;
+        opacity: 0.8 !important;
     }}
 
     [data-baseweb="calendar"], [data-baseweb="calendar"] * {{
@@ -252,32 +256,27 @@ def chart_theme(fig):
 def get_trained_nlp_pipeline():
     """Trains a TF-IDF + LinearSVC Model on Synthetic PHR Queries for local intent recognition."""
     training_data = [
-        # symptom_help
         ("I have severe pain in my head", "symptom_help"),
         ("My fever is 102 degrees", "symptom_help"),
         ("Experiencing dizziness and nausea", "symptom_help"),
         ("Sore throat and persistent cough", "symptom_help"),
         ("Sharp chest pain when breathing", "symptom_help"),
         ("Swollen ankle after falling", "symptom_help"),
-        # medication_query
         ("When should I take my insulin dose?", "medication_query"),
         ("Can I take aspirin with blood thinners?", "medication_query"),
         ("What is the prescribed dosage for metformin?", "medication_query"),
         ("Forgot my morning blood pressure pill", "medication_query"),
         ("Side effects of statin medications", "medication_query"),
-        # records_query
         ("Show my clinic visit summary", "records_query"),
         ("Download my hospital doctor notes", "records_query"),
         ("Where is my lab test result PDF stored?", "records_query"),
         ("List all doctor appointments from last month", "records_query"),
         ("Find my past medical history reports", "records_query"),
-        # health_trends
         ("Show my blood pressure graph for last week", "health_trends"),
         ("Is my glucose level spiking or stable?", "health_trends"),
         ("Display weight loss progress chart", "health_trends"),
         ("Plot my heart rate history over time", "health_trends"),
         ("Are my daily temperature trends normal?", "health_trends"),
-        # general_help
         ("How do I backup my health data?", "general_help"),
         ("How to use this PHR application", "general_help"),
         ("How do I add a new patient profile?", "general_help"),
@@ -291,14 +290,13 @@ def get_trained_nlp_pipeline():
     ])
     pipeline.fit(texts, labels)
     
-    # Calculate evaluation matrix
     preds = pipeline.predict(texts)
     report = classification_report(labels, preds, output_dict=True)
     cm = confusion_matrix(labels, preds)
     return pipeline, report, cm
 
-# ------------------------- 5 Demo Profiles Builder -------------------------
-PROFILES = [
+# ------------------------- Demo & Custom Profile Engines -------------------------
+BUILTIN_PROFILES = [
     "Personal Records",
     "Alex Morgan — Diabetes Monitoring",
     "Jamie Taylor — Post-Surgery Recovery",
@@ -356,14 +354,19 @@ def load_sample_profile(profile):
     if profile == "Personal Records":
         st.session_state.active_profile = profile
         return
-    data = build_sample_profile(profile)
+    # Check if custom profile exists in session state
+    if profile in st.session_state.custom_profiles:
+        data = st.session_state.custom_profiles[profile]
+    else:
+        data = build_sample_profile(profile)
+        
     for key, value in data.items():
         st.session_state[key] = copy.deepcopy(value)
     st.session_state.active_profile = profile
 
 def make_backup():
     keys = ["visits", "notes", "vitals", "symptoms", "medications", "documents",
-            "classifier_result", "visit_comparison", "ai_history", "active_profile"]
+            "classifier_result", "visit_comparison", "ai_history", "active_profile", "custom_profiles"]
     data = {k: st.session_state.get(k) for k in keys}
     data.update({"exported_at": datetime.now().isoformat(), "format_version": 1})
     return json.dumps(data, indent=2, ensure_ascii=False)
@@ -376,7 +379,7 @@ def restore_backup(uploaded_file):
     for key in expected:
         if key in data and not isinstance(data[key], list):
             raise ValueError(f"Invalid backup: '{key}' must be a list.")
-    for key in expected + ["classifier_result", "visit_comparison", "active_profile"]:
+    for key in expected + ["classifier_result", "visit_comparison", "active_profile", "custom_profiles"]:
         if key in data:
             st.session_state[key] = data[key]
 
@@ -390,9 +393,9 @@ def make_doctor_pdf():
                             title="CareTrail Doctor Summary", author="CareTrail Prototype")
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(name="CareTitle", parent=styles["Title"], fontSize=20,
-                              leading=24, alignment=TA_CENTER, textColor=colors.HexColor("#0D9488"), spaceAfter=10))
+                              leading=24, alignment=TA_CENTER, textColor=colors.HexColor("#14B8A6"), spaceAfter=10))
     styles.add(ParagraphStyle(name="CareSection", parent=styles["Heading2"], fontSize=12,
-                              leading=15, textColor=colors.HexColor("#0D9488"), spaceBefore=10, spaceAfter=5))
+                              leading=15, textColor=colors.HexColor("#14B8A6"), spaceBefore=10, spaceAfter=5))
     styles.add(ParagraphStyle(name="CareSmall", parent=styles["BodyText"], fontSize=7.5, leading=10))
     story = [
         Paragraph("CareTrail — Doctor Summary", styles["CareTitle"]),
@@ -409,9 +412,9 @@ def make_doctor_pdf():
             return
         table = Table(rows, repeatRows=1, colWidths=widths, hAlign="LEFT")
         table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0D9488")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("GRID", (0, 0), (-1, -1), .35, colors.HexColor("#CBD5E1")),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#14B8A6")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#042F2E")),
+            ("GRID", (0, 0), (-1, -1), .35, colors.HexColor("#334155")),
             ("FONTSIZE", (0, 0), (-1, -1), 7),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("LEFTPADDING", (0, 0), (-1, -1), 4),
@@ -450,7 +453,7 @@ def make_doctor_pdf():
     doc.build(story)
     return output.getvalue()
 
-# ------------------------- Sidebar Navigation & Auto-Load -------------------------
+# ------------------------- Sidebar Navigation & Patient Creator -------------------------
 NAV = [
     "Overview", "Health Notes & Timeline", "Vitals & Analytics", "Symptom Tracker",
     "Medications & Reminders", "Document Vault", "Visit Comparison",
@@ -463,23 +466,58 @@ with st.sidebar:
     st.caption("Intelligent PHR Assistant Platform")
     st.divider()
     
-    st.subheader("Select Demo Profile")
+    # Combined Profile List (Built-in Demos + User Created Custom Profiles)
+    all_profiles = BUILTIN_PROFILES + list(st.session_state.custom_profiles.keys())
     current_profile = st.session_state.active_profile
-    profile_index = PROFILES.index(current_profile) if current_profile in PROFILES else 0
+    profile_index = all_profiles.index(current_profile) if current_profile in all_profiles else 0
     
+    st.subheader("Select Patient Profile")
     chosen_profile = st.selectbox(
-        "Choose a patient profile", 
-        PROFILES, 
+        "Choose profile to test", 
+        all_profiles, 
         index=profile_index,
         key="profile_picker"
     )
     
     if chosen_profile != st.session_state.active_profile:
         load_sample_profile(chosen_profile)
-        notify(f"Loaded {chosen_profile}")
+        notify(f"Switched to {chosen_profile}")
         st.rerun()
         
-    st.caption("Auto-populates 14 days of realistic vitals, symptoms, and visits.")
+    st.caption("Switch between demo patient scenarios or custom patient profiles.")
+    
+    # Expander to Add a New Patient Profile for Live App Testing
+    with st.expander("➕ Add New Patient Profile"):
+        with st.form("new_patient_form", clear_on_submit=True):
+            p_name = st.text_input("Patient Full Name")
+            p_condition = st.text_input("Primary Condition", placeholder="e.g. Asthma, High Cholesterol")
+            p_sys = st.number_input("Baseline Systolic (mmHg)", 50, 250, 120)
+            p_dia = st.number_input("Baseline Diastolic (mmHg)", 30, 150, 80)
+            p_hr = st.number_input("Baseline Heart Rate (bpm)", 40, 200, 72)
+            p_glucose = st.number_input("Glucose (mg/dL; 0 = N/A)", 0, 500, 100)
+            
+            create_btn = st.form_submit_button("Create Patient Profile", type="primary")
+            
+        if create_btn:
+            if not p_name.strip():
+                st.warning("Please enter a patient name.")
+            else:
+                formatted_profile_name = f"{p_name.strip()} — {p_condition.strip() or 'General Checkup'}"
+                # Create fresh initial health records for this new custom patient
+                new_profile_data = {
+                    "visits": [{"date": today_str(), "provider": "General Health Clinic", "reason": "Initial Patient Registration", "diagnosis": "Baseline Evaluation", "notes": f"New test patient registered: {p_condition}"}],
+                    "notes": [{"date": today_str(), "title": "Patient Setup Note", "text": "Created profile for testing and tracking."}],
+                    "vitals": [{"date": today_str(), "systolic": p_sys, "diastolic": p_dia, "heart_rate": p_hr, "temperature": 36.6, "weight": 70.0, "glucose_mg_dl": p_glucose if p_glucose > 0 else None}],
+                    "symptoms": [],
+                    "medications": []
+                }
+                
+                # Save to session custom profiles dictionary
+                st.session_state.custom_profiles[formatted_profile_name] = new_profile_data
+                load_sample_profile(formatted_profile_name)
+                notify(f"Created & Loaded New Patient: {formatted_profile_name}")
+                st.rerun()
+
     st.divider()
     
     pending = st.session_state.get("quick_nav")
@@ -499,11 +537,11 @@ with st.sidebar:
 
 # ------------------------- Page Header Banner -------------------------
 if st.session_state.active_profile != "Personal Records":
-    st.info(f"Demo Profile Active: **{st.session_state.active_profile}**. Synthetic records for prototype evaluation.")
+    st.info(f"Active Patient Profile: **{st.session_state.active_profile}**.")
 
 st.markdown(
     f"""<div style="background:{C['panel']};border:1px solid {C['border']};
-    border-radius:16px;padding:20px 24px;margin-bottom:20px;box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+    border-radius:16px;padding:20px 24px;margin-bottom:20px;box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);">
     <div style="font-size:12px;letter-spacing:1.5px;font-weight:700;color:{C['accent']};text-transform:uppercase;">
     Personal Health Record Portal</div>
     <div style="font-size:28px;font-weight:800;color:{C['text']};margin:4px 0;">
@@ -528,7 +566,7 @@ if page == "Overview":
             df = pd.DataFrame(data)
             if "date" in df: df = df.sort_values("date", ascending=False)
             st.dataframe(df.head(5), use_container_width=True, hide_index=True)
-        else: st.info("No visits recorded. Select a demo profile or add a visit.")
+        else: st.info("No visits recorded. Select or create a patient profile.")
     with right:
         st.subheader("Recent Symptoms")
         data = current_records("symptoms")
@@ -624,7 +662,6 @@ elif page == "Vitals & Analytics":
             
     records = current_records("vitals")
     if records:
-        # Clinical Risk Assessment Alert Rules
         st.divider()
         st.subheader("Automated Clinical Risk Assessment")
         latest = sorted(records, key=lambda x: str(x.get("date", "")))[-1]
@@ -633,9 +670,9 @@ elif page == "Vitals & Analytics":
         temp_val = latest.get("temperature", 36.6)
         
         alerts = []
-        if sys_val >= 140 or dia_val >= 90:
+        if sys_val and dia_val and (sys_val >= 140 or dia_val >= 90):
             alerts.append(("error", f"**Hypertension Stage 2 Alert:** Blood pressure reading ({sys_val}/{dia_val} mmHg) exceeds threshold."))
-        elif sys_val >= 130 or dia_val >= 80:
+        elif sys_val and dia_val and (sys_val >= 130 or dia_val >= 80):
             alerts.append(("warning", f"**Hypertension Stage 1 Caution:** Blood pressure ({sys_val}/{dia_val} mmHg) is elevated."))
         
         if temp_val and temp_val >= 38.0:
@@ -680,7 +717,7 @@ elif page == "Vitals & Analytics":
         if fig is not None: st.plotly_chart(chart_theme(fig), use_container_width=True)
         st.download_button("Download Vitals CSV", csv_bytes(st.session_state.vitals),
                            file_name="caretrail_vitals.csv", mime="text/csv")
-    else: st.info("No vitals saved yet. Pick a demo profile from sidebar.")
+    else: st.info("No vitals saved yet. Pick or create a patient profile from sidebar.")
 
 # ------------------------- Symptom Tracker -------------------------
 elif page == "Symptom Tracker":
@@ -714,7 +751,7 @@ elif page == "Symptom Tracker":
             st.plotly_chart(chart_theme(fig), use_container_width=True)
         st.download_button("Download Symptom CSV", csv_bytes(st.session_state.symptoms),
                            file_name="caretrail_symptoms.csv", mime="text/csv")
-    else: st.info("No symptoms logged. Pick a demo profile from sidebar.")
+    else: st.info("No symptoms logged yet.")
 
 # ------------------------- Medications & Reminders -------------------------
 elif page == "Medications & Reminders":
@@ -759,7 +796,7 @@ elif page == "Medications & Reminders":
                 "DESCRIPTION:Follow your clinician's instructions.", "END:VEVENT", "END:VCALENDAR", ""])
             st.download_button(f"Download Reminder: {med.get('name', 'Medication')}", ics,
                                file_name=f"caretrail_reminder_{i+1}.ics", mime="text/calendar", key=f"med_ics_{i}")
-    else: st.info("No medication entries. Select a demo profile from sidebar.")
+    else: st.info("No medication entries saved.")
 
 # ------------------------- Document Vault & Privacy Sanitizer -------------------------
 elif page == "Document Vault":
@@ -794,7 +831,6 @@ elif page == "Document Vault":
                 if raw_txt:
                     st.text_area("Extracted Text", raw_txt[:5000], height=140, key=f"doc_raw_{i}")
                     
-                    # De-identification Scrubbing Demonstration
                     if st.button(f"Sanitize PII/PHI (HIPAA/DPDP Mode)", key=f"scrub_{i}"):
                         sanitized = re.sub(r'\b\d{3}-\d{2}-\d{4}\b', '[REDACTED SSN]', raw_txt)
                         sanitized = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '[REDACTED EMAIL]', sanitized)
@@ -812,7 +848,7 @@ elif page == "Visit Comparison":
     st.subheader("Visit Comparison")
     visits = current_records("visits")
     if len(visits) < 2:
-        st.info("Add at least two visits or select a demo profile.")
+        st.info("Add at least two visits or select a profile with multiple visit records.")
     else:
         labels = [f"{v.get('date', '')} — {v.get('provider', 'Provider not entered')}" for v in visits]
         a, b = st.columns(2)
@@ -871,7 +907,7 @@ elif page == "AI Question Classifier":
         st.write("Cross-validated evaluation metrics generated on synthetic PHR intent dataset:")
         
         rep_df = pd.DataFrame(report_dict).transpose()
-        st.dataframe(rep_df.style.highlight_max(axis=0, color="#D1FAE5"), use_container_width=True)
+        st.dataframe(rep_df.style.highlight_max(axis=0, color="#064E3B"), use_container_width=True)
         
         st.subheader("Confusion Matrix")
         classes = list(set(pipeline.named_steps['clf'].classes_))
@@ -925,4 +961,4 @@ elif page == "About & Privacy":
     """)
 
 st.divider()
-st.caption(f"CareTrail Prototype · {datetime.now().strftime('%d %b %Y, %H:%M')}")
+st.caption(f"CareTrail Prototype · Dark Mode · {datetime.now().strftime('%d %b %Y, %H:%M')}")
