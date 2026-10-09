@@ -94,3 +94,67 @@ st.markdown(
     [data-testid="stMain"], [data-testid="stMainBlockContainer"] {{
         background-color: {C["bg"]} !important;
         color: {C["text"]} !important;
+    }}
+    [data-testid="stHeader"] {{ background: {C["bg"]} !important; }}
+    [data-testid="stSidebar"], [data-testid="stSidebar"] > div {{
+        background-color: {C["sidebar"]} !important;
+        color: {C["sidebar_text"]} !important;
+    }}
+    [data-testid="stSidebar"] * {{ color: {C["sidebar_text"]} !important; }}
+    .stApp p, .stApp span, .stApp label, .stApp li,
+    .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5,
+    .stApp h6, .stApp strong, .stMarkdown, .stMarkdown p,
+    [data-testid="stCaptionContainer"], [data-testid="stMetricLabel"],
+    [data-testid="stMetricValue"], [data-testid="stMetricDelta"] {{
+        color: {C["text"]} !important;
+    }}
+    [data-testid="stCaptionContainer"] p, .stCaption, small {{
+        color: {C["muted"]} !important;
+    }}
+    [data-testid="stMetric"] {{
+        background: {C["panel"]} !important;
+        border: 1px solid {C["border"]} !important;
+        border-radius: 14px !important;
+        padding: 14px 16px !important;
+        box-shadow: 0 2px 8px rgba(20, 50, 70, 0.04);
+    }}
+    [data-testid="stExpander"], [data-testid="stVerticalBlockBorderWrapper"] {{
+        border-color: {C["border"]} !important;
+        border-radius: 12px !important;
+    }}
+    .stApp input, .stApp textarea,
+    .stApp [data-baseweb="input"] input,
+    .stApp [data-baseweb="textarea"] textarea {{
+        background: {C["input_bg"]} !important;
+        color: {C["input_text"]} !important;
+        -webkit-text-fill-color: {C["input_text"]} !important;
+        caret-color: {C["input_text"]} !important;
+        border-color: {C["border"]} !important;
+    }}
+    .stApp input::placeholder, .stApp textarea::placeholder {{
+        color: {C["muted"]} !important;
+        -webkit-text-fill-color: {C["muted"]} !important;
+        opacity: 1 !important;
+    }}
+    .stApp [data-baseweb="select"] > div,
+    .stApp [data-baseweb="popover"], .stApp [data-baseweb="menu"] {{
+        background: {C["input_bg"]} !important;
+        border-color: {C["border"]} !important;
+        color: {C["input_text"]} !important;
+    }}
+    .stApp [data-baseweb="select"] span,
+    .stApp [data-baseweb="select"] input,
+    [data-baseweb="popover"] *, [data-baseweb="menu"] * {{
+        color: {C["input_text"]} !important;
+    }}
+    .stApp [data-testid="stButton"] button,
+    .stApp [data-testid="stDownloadButton"] button {{
+        background: {C["panel"]} !important;
+        color: {C["text"]} !important;
+        border: 1px solid {C["border"]} !important;
+        border-radius: 9px !important;
+        transition: border-color .15s ease, background .15s ease;
+    }}
+    .stApp [data-testid="stButton"] button:hover,
+    .stApp [data-testid="stDownloadButton"] button:hover {{
+        border-color: {C["accent"]} !important;
