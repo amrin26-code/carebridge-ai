@@ -1,3 +1,54 @@
+An analysis of your original code alongside all requested modifications has been completed, and the fixes have been fully integrated into a complete, ready-to-run `app.py` script.
+
+### Key Corrections & Fixes Applied
+
+1. **Patient Profile Data Isolation**:
+* Added `profile_records` to `DEFAULTS` and initialized `PROFILE_DATA_KEYS`.
+
+
+* Replaced `load_sample_profile()` to save active profile state before switching, preventing record bleeding across sample or custom profiles.
+
+
+* Updated `load_synthetic_demo_comparison()` to register its dataset snapshot under `"Synthetic Patient Comparison Demo"` in `profile_records`.
+
+
+
+
+2. **Backup & Restore Logic**:
+* Extended `make_backup()` to include `profile_records`.
+
+
+* Rewrote `restore_backup()` to validate UTF-8 JSON structure, types, list contents, nested profile dictionaries, and active profile values before touching `st.session_state`.
+
+
+* Wrapped the restore button action inside an `if restore_backup(backup_file):` check to prevent false-positive success notifications.
+
+
+3. **Privacy Statements & Scrubbing Warnings**:
+* Updated text across the privacy panel, document vault, and About section to clearly state server processing conditions for hosted Streamlit instances and emphasize prototype boundaries.
+* Added an explicit `st.warning()` highlighting regex/pattern-matching limitations for identifier scrubbing.
+
+
+4. **Document Vault Optimization**:
+* Removed duplicate hexadecimal storage (`bytes_hex`) from document uploads to streamline session memory.
+
+
+5. **Vitals Alert Accuracy & Validation**:
+* Added robust numeric conversion via `pd.to_numeric` to avoid missing/invalid value crashes.
+* Replaced generic "all measurements normal" claims with explicit statements noting that only checked thresholds were evaluated.
+
+
+6. **AI Evaluation & Rubric Wording**:
+* Corrected tab layout syntax in the AI Question Classifier section.
+* Replaced model performance descriptions to honestly present the dataset size and scope.
+
+
+
+---
+
+### Complete Clean `app.py` Code
+
+```python
 import copy
 import io
 import json
@@ -46,6 +97,7 @@ DEFAULTS = {
     "visit_comparison": None,
     "active_profile": "Personal Records",
     "custom_profiles": {},
+    "profile_records": {},
     "ai_history": [],
     "generated_pdf": None,
     "page": "Overview",
@@ -54,6 +106,24 @@ DEFAULTS = {
 for key, value in DEFAULTS.items():
     if key not in st.session_state:
         st.session_state[key] = copy.deepcopy(value)
+
+PROFILE_DATA_KEYS = [
+    "visits",
+    "notes",
+    "vitals",
+    "symptoms",
+    "medications",
+    "documents",
+]
+
+if not isinstance(st.session_state.get("profile_records"), dict):
+    st.session_state.profile_records = {}
+
+if "Personal Records" not in st.session_state.profile_records:
+    st.session_state.profile_records["Personal Records"] = {
+        key: copy.deepcopy(st.session_state[key])
+        for key in PROFILE_DATA_KEYS
+    }
 
 # ------------------------- Theme Palette System -------------------------
 THEMES = {
@@ -277,7 +347,6 @@ def chart_theme(fig):
     return fig
 
 def validate_dataframe(df, required_columns, context="Dataset"):
-    """Robust input validation helper across tables and uploads."""
     if df is None or df.empty:
         st.warning(f"⚠️ {context} contains no valid records.")
         return False
@@ -293,7 +362,6 @@ def safe_text(value, limit=2000):
 # ------------------------- Built-in ML Classifier Engine -------------------------
 @st.cache_resource
 def get_trained_nlp_pipeline():
-    """Trains TF-IDF + LinearSVC Pipeline with strict 80/20 Train/Test Split metrics."""
     training_dataset = [
         ("I have severe pain in my head", "symptom_help"),
         ("My fever is 102 degrees", "symptom_help"),
@@ -332,7 +400,6 @@ def get_trained_nlp_pipeline():
     ]
     texts, labels = zip(*training_dataset)
     
-    # Stratified 80/20 train/test split to guarantee test set un-seen evaluation
     X_train, X_test, y_train, y_test = train_test_split(
         texts, labels, test_size=0.20, random_state=42, stratify=labels
     )
@@ -368,7 +435,6 @@ BUILTIN_PROFILES = [
 ]
 
 def load_synthetic_demo_comparison():
-    """Injects 2 fictional synthetic health records for 1-click rubric comparison."""
     rec_a = {
         "date": "2026-09-15", "provider": "St. Jude Clinic",
         "reason": "Routine Checkup", "diagnosis": "Hypertension Stage 1",
@@ -396,6 +462,10 @@ def load_synthetic_demo_comparison():
         {"date": "2026-10-01", "symptom": "Dizziness", "severity": 0, "duration": "Ongoing", "notes": "Symptom resolved after dosage change"}
     ]
     st.session_state.active_profile = "Synthetic Patient Comparison Demo"
+    st.session_state.profile_records["Synthetic Patient Comparison Demo"] = {
+        key: copy.deepcopy(st.session_state.get(key, []))
+        for key in PROFILE_DATA_KEYS
+    }
 
 def build_sample_profile(profile):
     vitals, symptoms = [], []
@@ -439,50 +509,168 @@ def build_sample_profile(profile):
         "notes": [{"date": today_str(), "title": "Clinical Summary Note", "text": f"Active profile set to {profile}."}],
         "vitals": vitals,
         "symptoms": symptoms,
-        "medications": [{"name": med_name, "dose": "10mg", "frequency": "Once Daily", "time": "09:00", "start_date": today_str(), "notes": "Take with water"}]
+        "medications": [{"name": med_name, "dose": "10mg", "frequency": "Once Daily", "time": "09:00", "start_date": today_str(), "notes": "Take with water"}],
+        "documents": []
     }
 
 def load_sample_profile(profile):
-    if profile == "Personal Records":
-        st.session_state.active_profile = profile
-        return
-    if profile in st.session_state.custom_profiles:
-        data = st.session_state.custom_profiles[profile]
-    else:
+    """Save the current profile and load records belonging to the selected profile."""
+    profile_records = st.session_state.profile_records
+    current_profile = st.session_state.active_profile
+    # Save the currently active profile before switching.
+    profile_records[current_profile] = {
+        key: copy.deepcopy(st.session_state.get(key, []))
+        for key in PROFILE_DATA_KEYS
+    }
+    # Load previously saved records for the selected profile.
+    if profile in profile_records:
+        data = copy.deepcopy(profile_records[profile])
+    # Load a custom profile for its first use.
+    elif profile in st.session_state.custom_profiles:
+        data = copy.deepcopy(st.session_state.custom_profiles[profile])
+    # Load a built-in synthetic profile for its first use.
+    elif profile in BUILTIN_PROFILES and profile != "Personal Records":
         data = build_sample_profile(profile)
-        
-    for key, value in data.items():
-        st.session_state[key] = copy.deepcopy(value)
+    # Personal Records starts with its own saved records.
+    elif profile == "Personal Records":
+        data = {
+            key: [] for key in PROFILE_DATA_KEYS
+        }
+    else:
+        st.error("The selected patient profile could not be loaded.")
+        return
+    for key in PROFILE_DATA_KEYS:
+        st.session_state[key] = copy.deepcopy(data.get(key, []))
     st.session_state.active_profile = profile
+    # Save a snapshot of the newly selected profile.
+    profile_records[profile] = {
+        key: copy.deepcopy(st.session_state[key])
+        for key in PROFILE_DATA_KEYS
+    }
 
 def make_backup():
-    keys = ["visits", "notes", "vitals", "symptoms", "medications", "documents",
-            "classifier_result", "visit_comparison", "ai_history", "active_profile", "custom_profiles", "theme"]
-    data = {k: st.session_state.get(k) for k in keys}
-    data.update({"exported_at": datetime.now().isoformat(), "format_version": 1})
+    keys = [
+        "visits",
+        "notes",
+        "vitals",
+        "symptoms",
+        "medications",
+        "documents",
+        "classifier_result",
+        "visit_comparison",
+        "ai_history",
+        "active_profile",
+        "custom_profiles",
+        "profile_records",
+        "theme",
+    ]
+    data = {
+        key: copy.deepcopy(st.session_state.get(key))
+        for key in keys
+    }
+    data.update({
+        "exported_at": datetime.now().isoformat(),
+        "format_version": 2,
+    })
     return json.dumps(data, indent=2, ensure_ascii=False)
 
 def restore_backup(uploaded_file):
+    """Validate a backup before modifying the current session."""
     if uploaded_file is None:
-        st.error("❌ Backup file missing.")
-        return
+        st.error("Backup file is missing.")
+        return False
     try:
-        data = json.load(uploaded_file)
+        data = json.loads(uploaded_file.getvalue().decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        st.error("The uploaded file is not valid UTF-8 JSON.")
+        return False
     except Exception as exc:
-        st.error(f"❌ Could not decode backup JSON: {exc}")
-        return
-
+        st.error(f"Could not read backup: {exc}")
+        return False
     if not isinstance(data, dict):
-        st.error("❌ Backup must contain a valid JSON object.")
-        return
-    expected = ["visits", "notes", "vitals", "symptoms", "medications", "documents", "ai_history"]
-    for key in expected:
-        if key in data and not isinstance(data[key], list):
-            st.error(f"❌ Invalid backup structure: '{key}' must be a list.")
-            return
-    for key in expected + ["classifier_result", "visit_comparison", "active_profile", "custom_profiles", "theme"]:
+        st.error("The backup must contain a JSON object.")
+        return False
+    list_keys = [
+        "visits",
+        "notes",
+        "vitals",
+        "symptoms",
+        "medications",
+        "documents",
+        "ai_history",
+    ]
+    # Validate all record lists before changing session state.
+    for key in list_keys:
         if key in data:
-            st.session_state[key] = data[key]
+            if not isinstance(data[key], list):
+                st.error(f"Invalid backup: '{key}' must be a list.")
+                return False
+            if not all(isinstance(item, dict) for item in data[key]):
+                st.error(
+                    f"Invalid backup: every item in '{key}' must be an object."
+                )
+                return False
+    for key in ["custom_profiles", "profile_records"]:
+        if key in data and not isinstance(data[key], dict):
+            st.error(f"Invalid backup: '{key}' must be an object.")
+            return False
+    if "active_profile" in data and not isinstance(data["active_profile"], str):
+        st.error("Invalid backup: active_profile must be text.")
+        return False
+    if "theme" in data and data["theme"] not in THEMES:
+        st.error("Invalid backup: unsupported theme.")
+        return False
+    if "classifier_result" in data:
+        value = data["classifier_result"]
+        if value is not None and not isinstance(value, dict):
+            st.error("Invalid backup: classifier_result must be an object or null.")
+            return False
+    if "visit_comparison" in data:
+        value = data["visit_comparison"]
+        if value is not None and not isinstance(value, dict):
+            st.error("Invalid backup: visit_comparison must be an object or null.")
+            return False
+    # Validate saved profile records, if supplied.
+    profile_records = data.get("profile_records", {})
+    if profile_records:
+        for profile_name, records in profile_records.items():
+            if not isinstance(profile_name, str) or not isinstance(records, dict):
+                st.error("Invalid profile data in backup.")
+                return False
+            for key in PROFILE_DATA_KEYS:
+                if key in records:
+                    if not isinstance(records[key], list):
+                        st.error(
+                            f"Invalid records for '{profile_name}': "
+                            f"'{key}' must be a list."
+                        )
+                        return False
+                    if not all(isinstance(item, dict) for item in records[key]):
+                        st.error(
+                            f"Invalid records for '{profile_name}': "
+                            f"'{key}' contains an invalid entry."
+                        )
+                        return False
+    # Apply the validated backup.
+    restore_keys = list_keys + [
+        "classifier_result",
+        "visit_comparison",
+        "active_profile",
+        "custom_profiles",
+        "profile_records",
+        "theme",
+    ]
+    for key in restore_keys:
+        if key in data:
+            st.session_state[key] = copy.deepcopy(data[key])
+    # Support older backups without profile_records.
+    active_profile = st.session_state.active_profile
+    if active_profile not in st.session_state.profile_records:
+        st.session_state.profile_records[active_profile] = {
+            key: copy.deepcopy(st.session_state.get(key, []))
+            for key in PROFILE_DATA_KEYS
+        }
+    return True
 
 # ------------------------- PDF Summary Generator -------------------------
 def make_doctor_pdf():
@@ -581,7 +769,7 @@ with st.sidebar:
         st.rerun()
     st.divider()
 
-    # ONE-CLICK SYNTHETIC DEMO BUTTON (RUBRIC REQUIREMENT 1)
+    # ONE-CLICK SYNTHETIC DEMO BUTTON
     if st.button("⚡ Load Sample Patient Demo", type="primary", use_container_width=True):
         load_synthetic_demo_comparison()
         st.session_state.page = "Visit Comparison"
@@ -633,7 +821,8 @@ with st.sidebar:
                     "notes": [{"date": today_str(), "title": "Patient Setup Note", "text": "Created profile for testing and tracking."}],
                     "vitals": [{"date": today_str(), "systolic": p_sys, "diastolic": p_dia, "heart_rate": p_hr, "temperature": 36.6, "weight": 70.0, "glucose_mg_dl": p_glucose if p_glucose > 0 else None}],
                     "symptoms": [],
-                    "medications": []
+                    "medications": [],
+                    "documents": []
                 }
                 st.session_state.custom_profiles[formatted_profile_name] = new_profile_data
                 load_sample_profile(formatted_profile_name)
@@ -673,14 +862,14 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# PRIVACY & SAFETY PANEL (RUBRIC REQUIREMENT 4)
+# PRIVACY & SAFETY PANEL
 with st.expander("🛡️ Privacy, Safety & Technical Limitations Panel", expanded=False):
-    st.markdown("""
-    * **Synthetic Data Usage**: All demo profiles and default datasets utilize synthetic, fictional health records for safe testing and demonstration.
-    * **Non-Diagnostic Role**: CareTrail functions solely as an AI record assistant and intent classifier. It **does not** provide medical diagnoses, treatment advice, or automated dosage changes.
-    * **Data Privacy Boundaries**: Medical records are held locally in temporary Streamlit memory during your browser session and are not stored on remote servers.
-    * **Professional Verification**: Any discrepancies or dosage updates identified by the application require review and confirmation by a qualified healthcare professional.
-    """)
+    st.markdown("""- **Synthetic Data Usage:** Built-in demonstration profiles contain fictional health records.
+- **Non-Diagnostic Role:** CareTrail is an educational record-management prototype. It does not diagnose conditions, prescribe treatment, or recommend automated dosage changes.
+- **Data Handling:** Records are maintained in Streamlit session state on the application server while the session is active. Session data may not persist after the session ends. Do not enter real patient identifiers or confidential medical information.
+- **Document Handling:** Uploaded files and extracted text may be processed by the hosted application. Do not upload identifiable patient records.
+- **Professional Verification:** Record discrepancies and threshold alerts require appropriate professional review.
+- **Clinical Limitations:** The alerts and classifier are demonstrations, not validated clinical decision-support tools.""")
 
 # ------------------------- Overview -------------------------
 if page == "Overview":
@@ -805,26 +994,56 @@ elif page == "Vitals & Analytics":
     if records:
         st.divider()
         st.subheader("Automated Risk Assessment Alerts")
-        latest = sorted(records, key=lambda x: str(x.get("date", "")))[-1]
-        sys_val = latest.get("systolic", 120)
-        dia_val = latest.get("diastolic", 80)
-        temp_val = latest.get("temperature", 36.6)
         
+        latest = max(
+            records,
+            key=lambda record: str(record.get("date", "")),
+        )
+
+        def numeric_value(record, key):
+            value = pd.to_numeric(record.get(key), errors="coerce")
+            return None if pd.isna(value) else float(value)
+
+        sys_val = numeric_value(latest, "systolic")
+        dia_val = numeric_value(latest, "diastolic")
+        temp_val = numeric_value(latest, "temperature")
+
         alerts = []
-        if sys_val and dia_val and (sys_val >= 140 or dia_val >= 90):
-            alerts.append(("error", f"**Hypertension Stage 2 Alert:** Blood pressure ({sys_val}/{dia_val} mmHg) exceeds threshold."))
-        elif sys_val and dia_val and (sys_val >= 130 or dia_val >= 80):
-            alerts.append(("warning", f"**Hypertension Stage 1 Caution:** Blood pressure ({sys_val}/{dia_val} mmHg) is elevated."))
-        
-        if temp_val and temp_val >= 38.0:
-            alerts.append(("error", f"**Fever Alert:** Temperature ({temp_val} °C) indicates pyrexia."))
+        if sys_val is not None and dia_val is not None:
+            if sys_val >= 140 or dia_val >= 90:
+                alerts.append((
+                    "error",
+                    f"**Blood Pressure Alert:** Recorded blood pressure "
+                    f"({sys_val:g}/{dia_val:g} mmHg) meets this prototype's "
+                    "high-reading alert threshold."
+                ))
+            elif sys_val >= 130 or dia_val >= 80:
+                alerts.append((
+                    "warning",
+                    f"**Blood Pressure Caution:** Recorded blood pressure "
+                    f"({sys_val:g}/{dia_val:g} mmHg) meets this prototype's "
+                    "elevated-reading caution threshold."
+                ))
+
+        if temp_val is not None and temp_val >= 38.0:
+            alerts.append((
+                "error",
+                f"**Temperature Alert:** Recorded temperature "
+                f"({temp_val:g} °C) meets this prototype's fever threshold."
+            ))
 
         if alerts:
-            for alert_type, msg in alerts:
-                if alert_type == "error": st.error(msg)
-                else: st.warning(msg)
+            for alert_type, message in alerts:
+                if alert_type == "error":
+                    st.error(message)
+                else:
+                    st.warning(message)
         else:
-            st.success("All latest vitals parameters remain within normal baseline ranges.")
+            st.info(
+                "No implemented blood-pressure or temperature alert threshold "
+                "was triggered by the available latest reading. This does not "
+                "mean all measurements are normal or rule out a medical problem."
+            )
 
         st.divider()
         st.subheader("Interactive Vitals Logs & Plotly Visualizations")
@@ -981,7 +1200,16 @@ elif page == "Medications & Reminders":
 # ------------------------- Document Vault & Privacy Scrubbing -------------------------
 elif page == "Document Vault":
     st.subheader("Document Vault & PII/PHI De-identification Scrubbing Tool")
-    st.caption("All uploaded documents are processed securely in local session memory.")
+    st.caption(
+        "Uploaded documents may be processed on the hosted application server. "
+        "Use fictional or de-identified data only."
+    )
+    st.warning(
+        "Identifier scrubbing uses limited pattern matching for selected identifiers. "
+        "It may miss names, addresses, dates of birth, medical record numbers, "
+        "and other identifying information. Review the output manually; "
+        "do not treat it as guaranteed de-identification."
+    )
     
     uploaded = st.file_uploader("Upload Clinical Record or Report", type=["txt", "md", "csv", "pdf"])
     if uploaded is not None:
@@ -1001,9 +1229,11 @@ elif page == "Document Vault":
                 except Exception as exc:
                     extracted = f"PDF text extraction failed: {exc}"
             st.session_state.documents.append({
-                "name": uploaded.name, "type": uploaded.type or "application/octet-stream",
-                "size": len(content), "uploaded_at": datetime.now().isoformat(timespec="seconds"),
-                "text": extracted, "bytes_hex": content.hex()
+                "name": uploaded.name,
+                "type": uploaded.type or "application/octet-stream",
+                "size": len(content),
+                "uploaded_at": datetime.now().isoformat(timespec="seconds"),
+                "text": extracted,
             })
             notify("Document added securely.")
             st.rerun()
@@ -1072,7 +1302,6 @@ elif page == "Visit Comparison":
             else:
                 st.success("All fields between Record A and Record B match identically.")
                 
-            # DOWNLOADABLE COMPARISON REPORTS (RUBRIC REQUIREMENT 5)
             st.subheader("Export Comparison Report")
             r_col1, r_col2 = st.columns(2)
             
@@ -1103,7 +1332,10 @@ elif page == "AI Question Classifier":
     
     pipeline, report_dict, cm, split_info, classes = get_trained_nlp_pipeline()
     
-    t1, t2 = t1, t2 = st.tabs(["Interactive Query Assistant", "📊 AI Model Performance & Metrics (Rubric Evaluation)"])
+    t1, t2 = st.tabs([
+        "Interactive Query Assistant",
+        "📊 AI Model Performance & Metrics (Rubric Evaluation)",
+    ])
     
     with t1:
         question = st.text_area("Enter a patient health query:", placeholder="e.g., Where can I view my recent blood pressure graph?", height=100)
@@ -1134,10 +1366,14 @@ elif page == "AI Question Classifier":
             st.metric("Predicted Intent Category", result.get("intent"))
             st.write(f"**Assistant Response:** {result.get('response')}")
 
-    # AI MODEL EVALUATION DASHBOARD (RUBRIC REQUIREMENT 3)
     with t2:
         st.markdown("### AI Intent Classifier Test-Set Metrics")
-        st.caption("Metrics below are strictly evaluated on unseen Test-Set Data (80/20 Train/Test Split) to ensure authentic performance reporting.")
+        st.caption(
+            "Metrics are calculated on a stratified holdout test set. "
+            "The dataset is small and manually constructed, so the scores are "
+            "illustrative and should not be interpreted as evidence of clinical "
+            "accuracy or real-world patient-query performance."
+        )
         
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Test Accuracy", f"{split_info['test_acc']*100:.1f}%")
@@ -1163,10 +1399,13 @@ elif page == "Data Backup & Restore":
     st.divider()
     st.subheader("Restore Backup")
     backup_file = st.file_uploader("Select CareTrail JSON Backup File", type=["json"], key="backup_restore")
-    if st.button("Restore Session Backup Data", disabled=backup_file is None):
-        restore_backup(backup_file)
-        notify("Session data restored successfully.")
-        st.rerun()
+    if st.button(
+        "Restore Session Backup Data",
+        disabled=backup_file is None,
+    ):
+        if restore_backup(backup_file):
+            notify("Session data restored successfully.")
+            st.rerun()
 
 # ------------------------- Doctor Summary PDF -------------------------
 elif page == "Doctor Summary PDF":
@@ -1186,13 +1425,19 @@ elif page == "Doctor Summary PDF":
 # ------------------------- About & Privacy -------------------------
 elif page == "About & Privacy":
     st.subheader("About CareTrail")
-    st.write("CareTrail is an intelligent Personal Health Record (PHR) assistant designed to simplify medical tracking while enforcing strict local data privacy boundaries.")
+    st.write(
+        "CareTrail is an educational Personal Health Record (PHR) prototype "
+        "for organizing health records, comparing visits, visualizing selected "
+        "measurements, and demonstrating text-intent classification."
+    )
     st.subheader("Rubric & Module Mapping")
-    st.markdown("""
-    - **Module Mapping:** Module 2 — Healthcare Applications (Intelligent PHR Assistant)
-    - **AI Techniques:** Local TF-IDF + LinearSVC Intent Pipeline (Stratified 80/20 Train/Test Evaluation) & Rule-Based Risk Alerts.
-    - **Compliance:** Aligned with HIPAA Security Rule (§ 164.312) principles via local processing and automated PII scrubbing.
-    """)
+    st.markdown("""- **Module Mapping:** Module 2 — Healthcare Applications (Intelligent PHR Assistant).
+- **AI Techniques:** TF-IDF text features with a LinearSVC intent classifier, evaluated using a stratified holdout split.
+- **Rule-Based Component:** Selected blood-pressure and temperature threshold alerts.
+- **Data Limitations:** The classifier uses a small, manually constructed dataset. Its evaluation does not establish clinical validity.
+- **Privacy and Compliance:** CareTrail is a student prototype. It has not been independently assessed or certified as HIPAA-compliant and should not be used to store identifiable patient records.""")
 
 st.divider()
 st.caption(f"CareTrail Prototype · Active Profile: {st.session_state.active_profile} · Theme: {st.session_state.theme}")
+
+```
