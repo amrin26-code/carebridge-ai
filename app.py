@@ -1,375 +1,521 @@
 
-import streamlit as st
-import joblib
-import pandas as pd
-import re
 import html
+import re
 from datetime import date, timedelta
 
+import joblib
+import pandas as pd
+import streamlit as st
+
+
 # =========================================================
-# CONFIGURATION
+# 1. PAGE CONFIGURATION
 # =========================================================
+
 st.set_page_config(
-    page_title="CareTrail | Healthcare Intelligence",
-    page_icon="🩺",
+    page_title="CareTrail | Health Companion",
+    page_icon="✚",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-MODEL_FILE = "intelliphr_intent_model.joblib"
 
 # =========================================================
-# DESIGN
+# 2. GLOBAL CSS — READABLE COLOURS THROUGHOUT THE APP
 # =========================================================
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap');
 
-:root {
-    --navy: #17324D;
-    --teal: #087F8C;
-    --pale: #E8F5F5;
-    --bg: #F5F8FB;
-    --border: #E0E8EF;
-    --muted: #718096;
-}
+st.markdown(
+    """
+    <style>
+    .stApp,
+    [data-testid="stAppViewContainer"],
+    [data-testid="stMain"],
+    [data-testid="stMainBlockContainer"] {
+        background-color: #F3F6FA !important;
+        color: #1E293B !important;
+    }
 
-html, body, [class*="css"] {
-    font-family: 'DM Sans', sans-serif;
-}
+    /* Main page text */
+    .stApp h1, .stApp h2, .stApp h3, .stApp h4,
+    .stApp p, .stApp li, .stApp label,
+    .stApp [data-testid="stCaptionContainer"],
+    .stApp [data-testid="stMetricLabel"],
+    .stApp [data-testid="stMetricValue"],
+    .stApp [data-testid="stMetricDelta"] {
+        color: #1E293B !important;
+    }
 
-.stApp { background: var(--bg); color: var(--navy); }
+    /* Dark sidebar */
+    [data-testid="stSidebar"] {
+        background-color: #10243A !important;
+        border-right: 1px solid #263E56;
+    }
 
-.block-container {
-    max-width: 1450px;
-    padding-top: 1.5rem;
-    padding-bottom: 3rem;
-}
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3,
+    [data-testid="stSidebar"] p,
+    [data-testid="stSidebar"] span,
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] div,
+    [data-testid="stSidebar"] li {
+        color: #FFFFFF !important;
+    }
 
-[data-testid="stSidebar"] {
-    background: white;
-    border-right: 1px solid var(--border);
-}
+    /* Text inputs and dropdowns */
+    .stApp input,
+    .stApp textarea,
+    .stApp [data-baseweb="select"] > div,
+    .stApp [data-baseweb="input"] > div {
+        background-color: #FFFFFF !important;
+        color: #1E293B !important;
+        border-color: #CBD5E1 !important;
+    }
 
-[data-testid="stSidebar"] h1,
-[data-testid="stSidebar"] h2,
-[data-testid="stSidebar"] h3 {
-    color: var(--navy);
-    font-family: 'Manrope', sans-serif;
-}
+    .stApp input::placeholder,
+    .stApp textarea::placeholder {
+        color: #64748B !important;
+        opacity: 1 !important;
+    }
 
-.hero {
-    background: linear-gradient(115deg, #17324D, #20556A 65%, #087F8C);
-    padding: 30px;
-    border-radius: 19px;
-    color: white;
-    margin-bottom: 23px;
-}
+    [data-baseweb="popover"],
+    [data-baseweb="menu"],
+    [role="listbox"],
+    [role="option"] {
+        background-color: #FFFFFF !important;
+        color: #1E293B !important;
+    }
 
-.hero h1 {
-    color: white !important;
-    font-family: 'Manrope', sans-serif;
-    font-size: 34px;
-    font-weight: 800;
-    margin: 8px 0;
-}
+    /* Buttons */
+    .stApp .stButton > button,
+    .stApp .stDownloadButton > button {
+        background-color: #087E8B !important;
+        color: #FFFFFF !important;
+        border: 1px solid #087E8B !important;
+        border-radius: 9px !important;
+        font-weight: 600 !important;
+        min-height: 42px;
+    }
 
-.hero p { color: #DFECEF; margin-bottom: 0; }
+    .stApp .stButton > button *,
+    .stApp .stDownloadButton > button * {
+        color: #FFFFFF !important;
+    }
 
-.eyebrow {
-    color: #A9E5E4;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 2px;
-}
+    .stApp .stButton > button:hover,
+    .stApp .stDownloadButton > button:hover {
+        background-color: #066773 !important;
+    }
 
-.heading {
-    font-family: 'Manrope', sans-serif;
-    font-size: 25px;
-    font-weight: 800;
-    color: var(--navy);
-    margin-bottom: 4px;
-}
+    /* Metrics */
+    [data-testid="stMetric"] {
+        background-color: #FFFFFF !important;
+        border: 1px solid #DCE5EF !important;
+        padding: 18px !important;
+        border-radius: 14px !important;
+        box-shadow: 0 2px 8px rgba(15, 35, 60, 0.04);
+    }
 
-.subheading {
-    color: var(--muted);
-    margin-bottom: 20px;
-    font-size: 14px;
-}
+    [data-testid="stMetric"] * {
+        color: #1E293B !important;
+    }
 
-.metric {
-    background: white;
-    border: 1px solid var(--border);
-    border-radius: 15px;
-    padding: 20px;
-    min-height: 110px;
-}
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        background-color: #E7EDF5 !important;
+        border-radius: 10px;
+        padding: 5px;
+    }
 
-.metric-label {
-    color: var(--muted);
-    font-size: 11px;
-    letter-spacing: 0.7px;
-    font-weight: 700;
-}
+    .stTabs [data-baseweb="tab"] {
+        color: #334155 !important;
+    }
 
-.metric-value {
-    font-family: 'Manrope', sans-serif;
-    color: var(--navy);
-    font-size: 27px;
-    font-weight: 800;
-    margin-top: 8px;
-}
+    .stTabs [aria-selected="true"] {
+        background-color: #FFFFFF !important;
+        color: #087E8B !important;
+    }
 
-.panel {
-    background: white;
-    border: 1px solid var(--border);
-    border-radius: 15px;
-    padding: 21px;
-    margin-bottom: 15px;
-}
+    /* Dataframes, expanders and alerts */
+    [data-testid="stDataFrame"],
+    [data-testid="stTable"],
+    [data-testid="stExpander"] {
+        background-color: #FFFFFF !important;
+        color: #1E293B !important;
+    }
 
-.panel-title {
-    color: var(--navy);
-    font-family: 'Manrope', sans-serif;
-    font-size: 18px;
-    font-weight: 800;
-    margin-bottom: 7px;
-}
+    [data-testid="stExpander"] {
+        border: 1px solid #DCE5EF !important;
+        border-radius: 10px !important;
+    }
 
-.panel-caption {
-    color: var(--muted);
-    font-size: 13px;
-    margin-bottom: 12px;
-}
+    [data-testid="stAlert"] p {
+        color: #1E293B !important;
+    }
 
-.pill {
-    display: inline-block;
-    background: var(--pale);
-    color: var(--teal);
-    border-radius: 30px;
-    padding: 5px 10px;
-    font-size: 12px;
-    font-weight: 700;
-    margin: 3px;
-}
+    /* Custom cards */
+    .hero {
+        background: linear-gradient(120deg, #10243A, #174B64);
+        padding: 30px;
+        border-radius: 18px;
+        margin-bottom: 22px;
+    }
 
-.stButton > button, .stDownloadButton > button {
-    background: var(--teal);
-    color: white;
-    border: 1px solid var(--teal);
-    border-radius: 9px;
-    font-weight: 700;
-    min-height: 42px;
-}
+    .hero h1, .hero p, .hero span {
+        color: #FFFFFF !important;
+    }
 
-.stButton > button:hover, .stDownloadButton > button:hover {
-    background: #066974;
-    color: white;
-    border-color: #066974;
-}
+    .hero h1 {
+        font-size: 32px;
+        margin-bottom: 8px;
+    }
 
-.stTextArea textarea, .stTextInput input {
-    border-radius: 9px;
-    background: white;
-}
+    .hero p {
+        font-size: 15px;
+        line-height: 1.7;
+        margin-bottom: 0;
+    }
 
-[data-testid="stAlert"] { border-radius: 11px; }
+    .eyebrow {
+        color: #8DE0D6 !important;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+    }
 
-.footer {
-    text-align: center;
-    color: #7B8A9A;
-    border-top: 1px solid var(--border);
-    padding-top: 20px;
-    margin-top: 35px;
-    font-size: 12px;
-}
+    .section-heading {
+        font-size: 23px;
+        font-weight: 700;
+        color: #10243A !important;
+        margin-top: 12px;
+        margin-bottom: 6px;
+    }
 
-@media(max-width: 700px) {
-    .hero { padding: 22px; }
-    .hero h1 { font-size: 27px; }
-    .panel { padding: 15px; }
-}
-</style>
-""", unsafe_allow_html=True)
+    .muted {
+        color: #64748B !important;
+        font-size: 14px;
+        line-height: 1.6;
+    }
+
+    .info-card {
+        background-color: #FFFFFF;
+        border: 1px solid #DCE5EF;
+        border-radius: 14px;
+        padding: 19px;
+        min-height: 145px;
+        margin-bottom: 12px;
+    }
+
+    .info-card h3 {
+        color: #10243A !important;
+        font-size: 17px;
+        margin-top: 10px;
+    }
+
+    .info-card p {
+        color: #526277 !important;
+        font-size: 13px;
+        line-height: 1.6;
+    }
+
+    .pill {
+        display: inline-block;
+        padding: 5px 10px;
+        background-color: #DDF5F1;
+        color: #086B69 !important;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 700;
+    }
+
+    .record-card {
+        background-color: #FFFFFF;
+        border: 1px solid #DCE5EF;
+        border-left: 4px solid #087E8B;
+        border-radius: 10px;
+        padding: 14px 17px;
+        margin-bottom: 12px;
+    }
+
+    .record-card p {
+        color: #334155 !important;
+    }
+
+    .footer {
+        border-top: 1px solid #DCE5EF;
+        margin-top: 35px;
+        padding-top: 15px;
+        color: #64748B !important;
+        font-size: 12px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 # =========================================================
-# MODEL
+# 3. SESSION STATE
 # =========================================================
-@st.cache_resource
-def load_model():
-    return joblib.load(MODEL_FILE)
 
-try:
-    model = load_model()
-    model_error = None
-except Exception as exc:
-    model = None
-    model_error = str(exc)
+DEFAULTS = {
+    "visits": [],
+    "measurements": [],
+    "demo_loaded": False,
+    "comparison_report": None,
+    "medication_report": None,
+    "classifier_result": None,
+    "classifier_question": "",
+    "visit_a_notes": "",
+    "visit_b_notes": "",
+    "meds_a": "",
+    "meds_b": "",
+}
 
-
-# =========================================================
-# SESSION DATA
-# =========================================================
-if "visits" not in st.session_state:
-    st.session_state.visits = []
-
-if "measurements" not in st.session_state:
-    st.session_state.measurements = pd.DataFrame({
-        "Date": pd.Series(dtype="object"),
-        "Weight (kg)": pd.Series(dtype="float"),
-        "Systolic BP": pd.Series(dtype="float"),
-        "Diastolic BP": pd.Series(dtype="float"),
-        "Heart rate": pd.Series(dtype="float"),
-    })
-
-if "comparison_report" not in st.session_state:
-    st.session_state.comparison_report = None
-
-if "demo_loaded" not in st.session_state:
-    st.session_state.demo_loaded = False
+for key, value in DEFAULTS.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
 
 
 # =========================================================
-# HELPERS
+# 4. HELPER FUNCTIONS
 # =========================================================
-def safe(value):
-    return html.escape(str(value))
 
-
-def entries(text):
-    return [x.strip() for x in text.splitlines() if x.strip()]
-
-
-def normalize(text):
-    return re.sub(r"\s+", " ", text.strip()).casefold()
-
-
-def compare_lists(old, new):
-    old_map = {normalize(x): x for x in old}
-    new_map = {normalize(x): x for x in new}
-
-    added = [new_map[k] for k in new_map if k not in old_map]
-    removed = [old_map[k] for k in old_map if k not in new_map]
-    same = [new_map[k] for k in new_map if k in old_map]
-
-    return added, removed, same
-
-
-def metric(label, value, caption=""):
-    st.markdown(f"""
-    <div class="metric">
-      <div class="metric-label">{safe(label)}</div>
-      <div class="metric-value">{safe(value)}</div>
-      <div style="font-size:12px;color:#718096;margin-top:4px">
-        {safe(caption)}
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-
-def panel_title(title, caption=""):
+def show_hero(title, subtitle, eyebrow="CARETRAIL HEALTH COMPANION"):
     st.markdown(
-        f'<div class="panel-title">{safe(title)}</div>',
-        unsafe_allow_html=True
+        f"""
+        <div class="hero">
+            <div class="eyebrow">{html.escape(eyebrow)}</div>
+            <h1>{html.escape(title)}</h1>
+            <p>{html.escape(subtitle)}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
-    if caption:
+
+
+def section_title(title, description=None):
+    st.markdown(
+        f'<div class="section-heading">{html.escape(title)}</div>',
+        unsafe_allow_html=True,
+    )
+    if description:
         st.markdown(
-            f'<div class="panel-caption">{safe(caption)}</div>',
-            unsafe_allow_html=True
+            f'<div class="muted">{html.escape(description)}</div>',
+            unsafe_allow_html=True,
         )
 
 
-def show_entries(title, items, empty="No entries recorded."):
-    st.markdown('<div class="panel">', unsafe_allow_html=True)
-    panel_title(title)
-
-    if items:
-        for item in items:
-            st.markdown(
-                f'<div style="padding:9px 0;border-bottom:1px solid #EDF1F5">'
-                f'{safe(item)}</div>',
-                unsafe_allow_html=True
-            )
-    else:
-        st.caption(empty)
-
-    st.markdown('</div>', unsafe_allow_html=True)
+def normalize(text):
+    return re.sub(r"\s+", " ", str(text).strip().lower())
 
 
-def report_text(title, content):
-    return (
-        f"{title}\n"
-        f"{'=' * len(title)}\n\n"
-        f"{content}\n\n"
-        "DISCLAIMER\n"
-        "CareTrail is an academic prototype. Information entered is not "
-        "independently verified. Text differences do not establish clinical "
-        "significance. Do not use this report to diagnose a condition or "
-        "change treatment. Consult a qualified healthcare professional.\n"
-    )
+def split_entries(text):
+    return [
+        item.strip()
+        for item in re.split(r"[\n,;]+", str(text))
+        if item.strip()
+    ]
+
+
+def visits_dataframe():
+    columns = ["Date", "Visit Type", "Notes", "Medications", "Follow-up"]
+    return pd.DataFrame(st.session_state.visits, columns=columns)
+
+
+def measurements_dataframe():
+    columns = [
+        "Date", "Weight (kg)", "Systolic BP",
+        "Diastolic BP", "Heart rate"
+    ]
+    return pd.DataFrame(st.session_state.measurements, columns=columns)
 
 
 def add_demo_data():
-    if st.session_state.demo_loaded:
-        return
+    """Populate every section with synthetic demonstration data."""
 
     today = date.today()
+
     st.session_state.visits = [
         {
-            "date": today - timedelta(days=60),
-            "title": "Previous demonstration visit",
-            "notes": "Synthetic example: routine follow-up.",
-            "medications": ["Example Medicine A: 1 tablet daily"],
-            "followup": ["Example: return for scheduled review"],
+            "Date": str(today - timedelta(days=30)),
+            "Visit Type": "General check-up",
+            "Notes": "DEMO: Routine check-up recorded.",
+            "Medications": "Demo Medicine A; Demo Supplement B",
+            "Follow-up": "Review recorded measurements",
         },
         {
-            "date": today - timedelta(days=15),
-            "title": "Recent demonstration visit",
-            "notes": "Synthetic example: review of recorded information.",
-            "medications": [
-                "Example Medicine A: 1 tablet daily",
-                "Example Medicine B: as recorded in example"
-            ],
-            "followup": [
-                "Example: return for scheduled review",
-                "Example: bring previous test report"
-            ],
+            "Date": str(today - timedelta(days=21)),
+            "Visit Type": "Laboratory test",
+            "Notes": "DEMO: Laboratory visit record.",
+            "Medications": "Demo Medicine A",
+            "Follow-up": "Review example report with clinician",
+        },
+        {
+            "Date": str(today - timedelta(days=14)),
+            "Visit Type": "Follow-up",
+            "Notes": "DEMO: Follow-up appointment.",
+            "Medications": "Demo Medicine A; Demo Medicine C",
+            "Follow-up": "Next review in two weeks",
+        },
+        {
+            "Date": str(today - timedelta(days=7)),
+            "Visit Type": "General check-up",
+            "Notes": "DEMO: Routine check-up recorded.",
+            "Medications": "Demo Medicine A",
+            "Follow-up": "Continue planned follow-up",
+        },
+        {
+            "Date": str(today),
+            "Visit Type": "Specialist appointment",
+            "Notes": "DEMO: Example specialist visit.",
+            "Medications": "Demo Medicine A; Demo Medicine D",
+            "Follow-up": "Example follow-up appointment",
         },
     ]
 
-    st.session_state.measurements = pd.DataFrame({
-        "Date": [
-            today - timedelta(days=60),
-            today - timedelta(days=45),
-            today - timedelta(days=30),
-            today - timedelta(days=15),
-        ],
-        "Weight (kg)": [64.0, 63.8, 64.2, 63.9],
-        "Systolic BP": [120, 122, 119, 121],
-        "Diastolic BP": [78, 79, 77, 78],
-        "Heart rate": [72, 74, 71, 73],
-    })
+    st.session_state.measurements = [
+        {
+            "Date": str(today - timedelta(days=30)),
+            "Weight (kg)": 65.0,
+            "Systolic BP": 120,
+            "Diastolic BP": 80,
+            "Heart rate": 74,
+        },
+        {
+            "Date": str(today - timedelta(days=21)),
+            "Weight (kg)": 64.8,
+            "Systolic BP": 122,
+            "Diastolic BP": 81,
+            "Heart rate": 76,
+        },
+        {
+            "Date": str(today - timedelta(days=14)),
+            "Weight (kg)": 64.6,
+            "Systolic BP": 119,
+            "Diastolic BP": 79,
+            "Heart rate": 73,
+        },
+        {
+            "Date": str(today - timedelta(days=7)),
+            "Weight (kg)": 64.5,
+            "Systolic BP": 118,
+            "Diastolic BP": 79,
+            "Heart rate": 72,
+        },
+        {
+            "Date": str(today),
+            "Weight (kg)": 64.4,
+            "Systolic BP": 121,
+            "Diastolic BP": 80,
+            "Heart rate": 75,
+        },
+    ]
 
+    st.session_state.visit_a_notes = (
+        "Routine check-up\n"
+        "Blood pressure recorded\n"
+        "Follow-up planned\n"
+        "Laboratory report requested"
+    )
+
+    st.session_state.visit_b_notes = (
+        "Routine check-up\n"
+        "Blood pressure recorded\n"
+        "Follow-up appointment scheduled"
+    )
+
+    st.session_state.meds_a = (
+        "Demo Medicine A\n"
+        "Demo Supplement B\n"
+        "Demo Medicine C"
+    )
+
+    st.session_state.meds_b = (
+        "Demo Medicine A\n"
+        "Demo Medicine C\n"
+        "Demo Medicine D"
+    )
+
+    st.session_state.classifier_question = (
+        "Help me understand my medical records."
+    )
+
+    st.session_state.comparison_report = None
+    st.session_state.medication_report = None
+    st.session_state.classifier_result = None
     st.session_state.demo_loaded = True
 
 
-# =========================================================
-# SIDEBAR NAVIGATION
-# =========================================================
-with st.sidebar:
-    st.markdown("""
-    <div style="padding:8px 0 20px">
-      <div style="font-size:30px">🩺</div>
-      <div style="font-family:Manrope,sans-serif;font-size:25px;
-                  font-weight:800;color:#17324D">CareTrail</div>
-      <div style="font-size:12px;color:#718096">
-        Healthcare Information Platform
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+def clear_all_data():
+    st.session_state.visits = []
+    st.session_state.measurements = []
+    st.session_state.demo_loaded = False
+    st.session_state.comparison_report = None
+    st.session_state.medication_report = None
+    st.session_state.classifier_result = None
+    st.session_state.classifier_question = ""
+    st.session_state.visit_a_notes = ""
+    st.session_state.visit_b_notes = ""
+    st.session_state.meds_a = ""
+    st.session_state.meds_b = ""
 
-    st.markdown("---")
+
+def compare_text_lists(text_a, text_b):
+    list_a = split_entries(text_a)
+    list_b = split_entries(text_b)
+
+    # Preserve the original spelling while comparing case-insensitively.
+    map_a = {normalize(x): x for x in list_a}
+    map_b = {normalize(x): x for x in list_b}
+
+    common = sorted(map_a.keys() & map_b.keys())
+    only_a = sorted(map_a.keys() - map_b.keys())
+    only_b = sorted(map_b.keys() - map_a.keys())
+
+    report_rows = []
+
+    for key in common:
+        report_rows.append({"Category": "Matching", "Entry": map_a[key]})
+    for key in only_a:
+        report_rows.append({"Category": "Only in A", "Entry": map_a[key]})
+    for key in only_b:
+        report_rows.append({"Category": "Only in B", "Entry": map_b[key]})
+
+    return (
+        [map_a[x] for x in common],
+        [map_a[x] for x in only_a],
+        [map_b[x] for x in only_b],
+        pd.DataFrame(report_rows, columns=["Category", "Entry"]),
+    )
+
+
+# =========================================================
+# 5. SIDEBAR
+# =========================================================
+
+with st.sidebar:
+    st.markdown(
+        """
+        <div style="padding: 10px 0 22px 0;">
+            <div style="font-size: 13px; letter-spacing: 2px;
+                        color: #8DE0D6 !important; font-weight: 700;">
+                CARETRAIL
+            </div>
+            <div style="font-size: 24px; font-weight: 700;
+                        color: #FFFFFF !important; margin-top: 5px;">
+                Health Companion
+            </div>
+            <div style="font-size: 12px; color: #C5D3E0 !important;
+                        margin-top: 7px;">
+                Your health information, organised.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     page = st.radio(
         "NAVIGATION",
         [
@@ -381,691 +527,773 @@ with st.sidebar:
             "AI Question Classifier",
             "About CareTrail",
         ],
-        label_visibility="visible"
     )
 
     st.markdown("---")
+    st.markdown("**DEMO CONTROLS**")
 
-    if model is not None:
-        st.success("NLP model loaded")
+    if st.button("Load Demo for All Checks", use_container_width=True):
+        add_demo_data()
+        st.rerun()
+
+    if st.button("Clear All Session Data", use_container_width=True):
+        clear_all_data()
+        st.rerun()
+
+    if st.session_state.demo_loaded:
+        st.success("Synthetic demo data loaded.")
     else:
-        st.warning("NLP model unavailable")
+        st.caption("Load demo data to explore every section.")
 
+    st.markdown("---")
     st.caption("Academic prototype")
-    st.caption("Use synthetic data only.")
+    st.caption("Not for clinical decision-making.")
 
 
 # =========================================================
-# GLOBAL HEADER
+# 6. DASHBOARD
 # =========================================================
-st.markdown("""
-<div class="hero">
-  <div class="eyebrow">PATIENT INFORMATION • ANALYTICS • NLP</div>
-  <h1>CareTrail</h1>
-  <p>Organize visit information, review recorded differences,
-  and explore health data in one workspace.</p>
-</div>
-""", unsafe_allow_html=True)
 
-
-# =========================================================
-# DASHBOARD
-# =========================================================
 if page == "Dashboard":
-    st.markdown('<div class="heading">Dashboard overview</div>',
-                unsafe_allow_html=True)
-    st.markdown(
-        '<div class="subheading">Your workspace for visit records, '
-        'measurements and AI-assisted question classification.</div>',
-        unsafe_allow_html=True
+    show_hero(
+        "Your health, in one place.",
+        "Organise visit notes, compare records, review medication entries, "
+        "track measurements, and explore the AI classifier.",
     )
 
-    visits = st.session_state.visits
-    measurements = st.session_state.measurements
+    visits = visits_dataframe()
+    measurements = measurements_dataframe()
 
-    a, b, c, d = st.columns(4)
-    with a:
-        metric("VISIT RECORDS", len(visits), "Saved in this session")
-    with b:
-        metric("MEASUREMENTS", len(measurements), "Recorded data points")
-    with c:
-        metric("AI CLASSIFIER", "Ready" if model else "Unavailable",
-               "Trained NLP model")
-    with d:
-        metric("REPORTS", "Exportable", "Text and CSV downloads")
+    medication_count = sum(
+        len(split_entries(record.get("Medications", "")))
+        for record in st.session_state.visits
+    )
 
-    st.write("")
+    try:
+        joblib.load("intelliphr_intent_model.joblib")
+        model_status = "Available"
+    except Exception:
+        model_status = "Not found"
 
-    left, right = st.columns([1.25, 0.75])
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Visit records", len(visits))
+    c2.metric("Measurements", len(measurements))
+    c3.metric("Medication entries", medication_count)
+    c4.metric("AI model", model_status)
 
-    with left:
-        st.markdown('<div class="panel">', unsafe_allow_html=True)
-        panel_title("Welcome to CareTrail",
-                    "Choose a tool to begin working.")
+    st.markdown("")
+    section_title("Explore CareTrail", "Choose a module to explore.")
 
-        st.markdown("""
-        <span class="pill">Visit comparison</span>
-        <span class="pill">Medical timeline</span>
-        <span class="pill">Medication review</span>
-        <span class="pill">Health trends</span>
-        <span class="pill">AI classifier</span>
-        """, unsafe_allow_html=True)
-
-        st.markdown("""
-        <p style="color:#718096;line-height:1.8">
-        CareTrail is a prototype for organizing information entered for
-        different visits. It highlights text differences and visualizes
-        recorded measurements. Its AI component predicts question categories;
-        it does not answer medical questions or provide a diagnosis.
-        </p>
-        """, unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    with right:
-        st.markdown('<div class="panel">', unsafe_allow_html=True)
-        panel_title("Quick start")
-
-        st.write("**New to CareTrail?**")
-        st.write("Load clearly labelled synthetic example data to explore the features.")
-
-        if st.button("Load demo data", use_container_width=True):
-            add_demo_data()
-            st.success("Synthetic demo data loaded.")
-            st.rerun()
-
-        if st.button("Clear session data", use_container_width=True):
-            st.session_state.visits = []
-            st.session_state.measurements = pd.DataFrame({
-                "Date": pd.Series(dtype="object"),
-                "Weight (kg)": pd.Series(dtype="float"),
-                "Systolic BP": pd.Series(dtype="float"),
-                "Diastolic BP": pd.Series(dtype="float"),
-                "Heart rate": pd.Series(dtype="float"),
-            })
-            st.session_state.comparison_report = None
-            st.session_state.demo_loaded = False
-            st.rerun()
-
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    st.markdown("### Recent visit records")
-
-    if visits:
-        recent = sorted(visits, key=lambda x: x["date"], reverse=True)
-        st.dataframe(
-            pd.DataFrame([
-                {
-                    "Date": v["date"],
-                    "Visit": v["title"],
-                    "Notes": v["notes"],
-                    "Medication entries": len(v["medications"]),
-                }
-                for v in recent
-            ]),
-            use_container_width=True,
-            hide_index=True
-        )
-    else:
-        st.info("No visit records yet. Use Medical Timeline to add one.")
-
-    st.markdown("### Workspace tools")
-    tool_cols = st.columns(3)
-
-    tools = [
-        ("Compare visits", "Identify differences between two records."),
-        ("Review medications", "Compare medication text entries."),
-        ("Explore health trends", "Plot recorded measurements over time."),
+    cards = [
+        (
+            "01 · RECORDS",
+            "Visit Comparison",
+            "Compare two sets of notes and find matching or different entries.",
+        ),
+        (
+            "02 · HISTORY",
+            "Medical Timeline",
+            "Add dated visits, review your records, and export a CSV.",
+        ),
+        (
+            "03 · MEDICATIONS",
+            "Medication Review",
+            "Compare two medication lists using text matching.",
+        ),
+        (
+            "04 · MONITORING",
+            "Health Trends",
+            "Record sample measurements and explore charts over time.",
+        ),
+        (
+            "05 · MACHINE LEARNING",
+            "AI Question Classifier",
+            "Predict the intent category of a typed question.",
+        ),
+        (
+            "06 · PROJECT",
+            "About CareTrail",
+            "Explore the technologies, features, and limitations.",
+        ),
     ]
 
-    for col, (title, description) in zip(tool_cols, tools):
-        with col:
-            st.markdown('<div class="panel">', unsafe_allow_html=True)
-            panel_title(title)
-            st.caption(description)
-            st.markdown('</div>', unsafe_allow_html=True)
+    for start in range(0, len(cards), 3):
+        columns = st.columns(3)
+        for column, card in zip(columns, cards[start:start + 3]):
+            with column:
+                st.markdown(
+                    f"""
+                    <div class="info-card">
+                        <span class="pill">{html.escape(card[0])}</span>
+                        <h3>{html.escape(card[1])}</h3>
+                        <p>{html.escape(card[2])}</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+    section_title("Recent visit records")
+
+    if visits.empty:
+        st.info(
+            "No visit records yet. Use 'Load Demo for All Checks' "
+            "in the sidebar to populate the app."
+        )
+    else:
+        st.dataframe(
+            visits.sort_values("Date", ascending=False).head(5),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    if st.session_state.demo_loaded:
+        st.info(
+            "Demo mode is active. All example records and measurements "
+            "are synthetic and are provided only to demonstrate the app."
+        )
+
+    st.warning(
+        "CareTrail is an academic prototype. It does not diagnose diseases, "
+        "recommend treatments, or replace a healthcare professional."
+    )
 
 
 # =========================================================
-# VISIT COMPARISON
+# 7. VISIT COMPARISON
 # =========================================================
+
 elif page == "Visit Comparison":
-    st.markdown('<div class="heading">Visit comparison</div>',
-                unsafe_allow_html=True)
-    st.markdown(
-        '<div class="subheading">Compare medication entries and '
-        'follow-up instructions from two visits.</div>',
-        unsafe_allow_html=True
+    show_hero(
+        "Visit Comparison",
+        "Compare two sets of visit notes and identify text differences.",
     )
 
-    with st.form("compare_form"):
-        col1, col2 = st.columns(2)
+    section_title(
+        "Enter visit details",
+        "Separate each entry with a new line, comma, or semicolon.",
+    )
 
-        with col1:
-            old_date = st.date_input("Previous visit date",
-                                     value=date.today() - timedelta(days=30))
-            old_meds_text = st.text_area(
-                "Previous medication entries",
-                placeholder="One entry per line",
-                height=140
-            )
-            old_follow_text = st.text_area(
-                "Previous follow-up instructions",
-                placeholder="One instruction per line",
-                height=110
-            )
+    col1, col2 = st.columns(2)
 
-        with col2:
-            new_date = st.date_input("Current visit date",
-                                     value=date.today())
-            new_meds_text = st.text_area(
-                "Current medication entries",
-                placeholder="One entry per line",
-                height=140
-            )
-            new_follow_text = st.text_area(
-                "Current follow-up instructions",
-                placeholder="One instruction per line",
-                height=110
-            )
-
-        compare = st.form_submit_button(
-            "Compare records", use_container_width=True
+    with col1:
+        st.subheader("Visit A")
+        date_a = st.date_input("Visit A date", value=date.today(), key="visit_date_a")
+        text_a = st.text_area(
+            "Visit A notes",
+            key="visit_a_notes",
+            height=210,
+            placeholder="Enter notes or load the demo data.",
         )
 
-    if compare:
-        old_meds, new_meds = entries(old_meds_text), entries(new_meds_text)
-        old_follow = entries(old_follow_text)
-        new_follow = entries(new_follow_text)
-
-        med_diff = compare_lists(old_meds, new_meds)
-        follow_diff = compare_lists(old_follow, new_follow)
-
-        content = [
-            f"Previous visit date: {old_date}",
-            f"Current visit date: {new_date}",
-            "",
-            "MEDICATIONS",
-        ]
-
-        for title, items in zip(
-            ["New entries", "No longer listed", "Exact matches"], med_diff
-        ):
-            content += [f"\n{title}:"] + (items or ["None identified"])
-
-        content.append("\nFOLLOW-UP INSTRUCTIONS")
-        for title, items in zip(
-            ["New entries", "No longer listed", "Exact matches"], follow_diff
-        ):
-            content += [f"\n{title}:"] + (items or ["None identified"])
-
-        st.session_state.comparison_report = report_text(
-            "CARETRAIL VISIT COMPARISON", "\n".join(content)
+    with col2:
+        st.subheader("Visit B")
+        date_b = st.date_input("Visit B date", value=date.today(), key="visit_date_b")
+        text_b = st.text_area(
+            "Visit B notes",
+            key="visit_b_notes",
+            height=210,
+            placeholder="Enter notes or load the demo data.",
         )
 
-        x, y, z = st.columns(3)
-        with x:
-            metric("NEW MEDICATION ENTRIES", len(med_diff[0]))
-        with y:
-            metric("NO LONGER LISTED", len(med_diff[1]))
-        with z:
-            metric("EXACT MATCHES", len(med_diff[2]))
+    if st.button("Compare Visit Notes", type="primary"):
+        common, only_a, only_b, report = compare_text_lists(text_a, text_b)
 
-        st.markdown("### Medication differences")
+        st.session_state.comparison_report = report
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Matching entries", len(common))
+        c2.metric("Only in Visit A", len(only_a))
+        c3.metric("Only in Visit B", len(only_b))
+
         left, right = st.columns(2)
-        with left:
-            show_entries("New entries", med_diff[0])
-            show_entries("No longer listed", med_diff[1])
-        with right:
-            show_entries("Exact matches", med_diff[2])
 
-        st.markdown("### Follow-up differences")
-        left, right = st.columns(2)
         with left:
-            show_entries("New instructions", follow_diff[0])
-        with right:
-            show_entries("No longer listed", follow_diff[1])
-            show_entries("Exact matches", follow_diff[2])
+            section_title("Matching in both visits")
+            if common:
+                for item in common:
+                    st.success(item)
+            else:
+                st.info("No matching entries found.")
 
-    if st.session_state.comparison_report:
+            section_title("Only in Visit A")
+            if only_a:
+                for item in only_a:
+                    st.write("•", item)
+            else:
+                st.caption("No unique entries.")
+
+        with right:
+            section_title("Only in Visit B")
+            if only_b:
+                for item in only_b:
+                    st.write("•", item)
+            else:
+                st.caption("No unique entries.")
+
+    if st.session_state.comparison_report is not None:
+        report = st.session_state.comparison_report.copy()
+        report.insert(0, "Visit B date", str(date_b))
+        report.insert(0, "Visit A date", str(date_a))
+
         st.download_button(
-            "Download comparison report",
-            st.session_state.comparison_report,
-            file_name="CareTrail_Comparison.txt",
-            mime="text/plain",
-            use_container_width=True
+            "Download Visit Comparison (CSV)",
+            data=report.to_csv(index=False).encode("utf-8"),
+            file_name="caretrail_visit_comparison.csv",
+            mime="text/csv",
         )
 
-    st.info(
-        "Text comparison only: a missing entry does not prove that a "
-        "medicine was stopped. Verify all differences with a clinician."
+    st.caption(
+        "This is exact text comparison, not clinical interpretation. "
+        "Similar wording may be treated as different entries."
     )
 
 
 # =========================================================
-# MEDICAL TIMELINE
+# 8. MEDICAL TIMELINE
 # =========================================================
+
 elif page == "Medical Timeline":
-    st.markdown('<div class="heading">Medical timeline</div>',
-                unsafe_allow_html=True)
-    st.markdown(
-        '<div class="subheading">Create a chronological record of visit '
-        'notes. Records are held in the current app session only.</div>',
-        unsafe_allow_html=True
+    show_hero(
+        "Medical Timeline",
+        "Keep dated visit notes together and export your records.",
     )
 
-    with st.form("add_visit_form"):
+    section_title("Add a visit record")
+
+    with st.form("visit_form", clear_on_submit=True):
         visit_date = st.date_input("Visit date", value=date.today())
-        visit_title = st.text_input("Visit title",
-                                    placeholder="Example: Routine follow-up")
-        visit_notes = st.text_area("Visit notes",
-                                   placeholder="Enter a short note",
-                                   height=110)
-        visit_meds = st.text_area(
-            "Medication entries",
-            placeholder="One entry per line",
-            height=100
-        )
-        visit_follow = st.text_area(
-            "Follow-up instructions",
-            placeholder="One instruction per line",
-            height=100
-        )
-        save_visit = st.form_submit_button(
-            "Add visit record", use_container_width=True
+
+        visit_type = st.selectbox(
+            "Visit type",
+            [
+                "General check-up",
+                "Follow-up",
+                "Laboratory test",
+                "Specialist appointment",
+                "Other",
+            ],
         )
 
-    if save_visit:
-        if not visit_title.strip():
-            st.error("Please enter a visit title.")
+        notes = st.text_area("Visit notes")
+        medications = st.text_area("Medication entries")
+        follow_up = st.text_input("Follow-up notes")
+
+        submitted = st.form_submit_button("Save Visit Record")
+
+    if submitted:
+        if not any([notes.strip(), medications.strip(), follow_up.strip()]):
+            st.error("Enter at least one detail before saving.")
         else:
-            st.session_state.visits.append({
-                "date": visit_date,
-                "title": visit_title.strip(),
-                "notes": visit_notes.strip(),
-                "medications": entries(visit_meds),
-                "followup": entries(visit_follow),
-            })
+            st.session_state.visits.append(
+                {
+                    "Date": str(visit_date),
+                    "Visit Type": visit_type,
+                    "Notes": notes.strip(),
+                    "Medications": medications.strip(),
+                    "Follow-up": follow_up.strip(),
+                }
+            )
             st.success("Visit record added to this session.")
             st.rerun()
 
-    st.markdown("### Visit history")
+    st.markdown("")
+    section_title("Visit history")
 
-    if st.session_state.visits:
-        ordered = sorted(st.session_state.visits,
-                         key=lambda x: x["date"], reverse=True)
+    visits = visits_dataframe()
 
-        for i, visit in enumerate(ordered):
-            with st.expander(
-                f"{visit['date']} — {visit['title']}", expanded=(i == 0)
-            ):
-                st.write("**Notes**")
-                st.write(visit["notes"] or "No notes entered.")
-                st.write("**Medication entries**")
-                for item in visit["medications"]:
-                    st.write(f"- {item}")
-                if not visit["medications"]:
-                    st.caption("No medication entries.")
-
-                st.write("**Follow-up instructions**")
-                for item in visit["followup"]:
-                    st.write(f"- {item}")
-                if not visit["followup"]:
-                    st.caption("No follow-up instructions.")
-
-        timeline_df = pd.DataFrame([
-            {
-                "Date": v["date"],
-                "Visit": v["title"],
-                "Notes": v["notes"],
-                "Medications": " | ".join(v["medications"]),
-                "Follow-up": " | ".join(v["followup"]),
-            }
-            for v in ordered
-        ])
-
-        st.download_button(
-            "Download medical timeline (CSV)",
-            timeline_df.to_csv(index=False),
-            file_name="CareTrail_Timeline.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
+    if visits.empty:
+        st.info("No visit records yet. Load demo data or add a record above.")
     else:
-        st.info("No visit records saved. Add a record above or load demo data from Dashboard.")
+        visits = visits.sort_values("Date", ascending=False)
 
-
-# =========================================================
-# MEDICATION REVIEW
-# =========================================================
-elif page == "Medication Review":
-    st.markdown('<div class="heading">Medication review</div>',
-                unsafe_allow_html=True)
-    st.markdown(
-        '<div class="subheading">Compare medication text entries and '
-        'prepare a review list. This tool does not validate prescriptions.</div>',
-        unsafe_allow_html=True
-    )
-
-    old_text = st.text_area(
-        "Previous medication list",
-        placeholder="One medication entry per line",
-        height=170
-    )
-    new_text = st.text_area(
-        "Current medication list",
-        placeholder="One medication entry per line",
-        height=170
-    )
-
-    if st.button("Review medication differences", use_container_width=True):
-        result = compare_lists(entries(old_text), entries(new_text))
-        labels = ["New entries", "No longer listed", "Exact matches"]
-
-        for label, items in zip(labels, result):
-            show_entries(label, items)
-
-        medication_report = report_text(
-            "CARETRAIL MEDICATION TEXT REVIEW",
-            "\n".join(
-                [f"\n{label}:"] + (items or ["None identified"])
-                for label, items in zip(labels, result)
-            )
+        st.dataframe(
+            visits,
+            use_container_width=True,
+            hide_index=True,
         )
 
         st.download_button(
-            "Download medication review",
-            medication_report,
-            file_name="CareTrail_Medication_Review.txt",
-            mime="text/plain",
-            use_container_width=True
+            "Export Medical Timeline (CSV)",
+            data=visits.to_csv(index=False).encode("utf-8"),
+            file_name="caretrail_medical_timeline.csv",
+            mime="text/csv",
         )
 
-    st.warning(
-        "This comparison cannot determine whether a medication is safe, "
-        "appropriate, discontinued, or interacting with another medication. "
-        "Confirm medication questions with a qualified healthcare professional."
+        section_title("Timeline view")
+
+        for _, row in visits.iterrows():
+            with st.expander(f"{row['Date']} — {row['Visit Type']}"):
+                st.write("**Notes:**", row["Notes"] or "None recorded")
+                st.write("**Medication entries:**", row["Medications"] or "None recorded")
+                st.write("**Follow-up:**", row["Follow-up"] or "None recorded")
+
+    st.caption(
+        "Records are stored temporarily in session memory, not a permanent database."
     )
 
 
 # =========================================================
-# HEALTH TRENDS
+# 9. MEDICATION REVIEW
 # =========================================================
+
+elif page == "Medication Review":
+    show_hero(
+        "Medication Review",
+        "Compare two medication lists to identify matching and different entries.",
+    )
+
+    st.info(
+        "This tool compares text only. It does not verify prescriptions, "
+        "dosages, interactions, medication safety, or suitability."
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Medication List A")
+        meds_a = st.text_area(
+            "Enter list A",
+            key="meds_a",
+            height=190,
+            placeholder="Enter medication entries or load demo data.",
+        )
+
+    with col2:
+        st.subheader("Medication List B")
+        meds_b = st.text_area(
+            "Enter list B",
+            key="meds_b",
+            height=190,
+            placeholder="Enter medication entries or load demo data.",
+        )
+
+    if st.button("Compare Medication Lists", type="primary"):
+        common, only_a, only_b, report = compare_text_lists(meds_a, meds_b)
+
+        st.session_state.medication_report = report
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Matching entries", len(common))
+        c2.metric("Only in list A", len(only_a))
+        c3.metric("Only in list B", len(only_b))
+
+        left, right = st.columns(2)
+
+        with left:
+            section_title("Matching entries")
+            if common:
+                for item in common:
+                    st.success(item)
+            else:
+                st.info("No exact matches.")
+
+            section_title("Only in list A")
+            if only_a:
+                for item in only_a:
+                    st.write("•", item)
+            else:
+                st.caption("No unique entries.")
+
+        with right:
+            section_title("Only in list B")
+            if only_b:
+                for item in only_b:
+                    st.write("•", item)
+            else:
+                st.caption("No unique entries.")
+
+    if st.session_state.medication_report is not None:
+        st.download_button(
+            "Download Medication Comparison (CSV)",
+            data=st.session_state.medication_report.to_csv(
+                index=False
+            ).encode("utf-8"),
+            file_name="caretrail_medication_comparison.csv",
+            mime="text/csv",
+        )
+
+
+# =========================================================
+# 10. HEALTH TRENDS
+# =========================================================
+
 elif page == "Health Trends":
-    st.markdown('<div class="heading">Health trends</div>',
-                unsafe_allow_html=True)
-    st.markdown(
-        '<div class="subheading">Record numeric measurements and visualize '
-        'their values over time. The charts describe the entered data only.</div>',
-        unsafe_allow_html=True
+    show_hero(
+        "Health Trends",
+        "Record measurements and view numerical changes over time.",
     )
 
-    st.markdown('<div class="panel">', unsafe_allow_html=True)
-    panel_title("Add a measurement",
-                "Leave fields blank when a measurement was not recorded.")
+    st.info(
+        "Charts show recorded values only. They do not determine whether "
+        "a measurement is safe or diagnose a health condition."
+    )
 
-    with st.form("measurement_form"):
-        measure_date = st.date_input("Measurement date", value=date.today())
+    section_title("Add a measurement")
 
-        a, b = st.columns(2)
-        with a:
-            weight = st.number_input(
-                "Weight (kg)", min_value=0.0, max_value=500.0,
-                value=None, step=0.1, format="%.1f"
-            )
-            systolic = st.number_input(
-                "Systolic blood pressure", min_value=0, max_value=350,
-                value=None, step=1
-            )
-            diastolic = st.number_input(
-                "Diastolic blood pressure", min_value=0, max_value=250,
-                value=None, step=1
-            )
-
-        with b:
-            heart_rate = st.number_input(
-                "Heart rate (beats/min)", min_value=0, max_value=300,
-                value=None, step=1
-            )
-
-        add_measurement = st.form_submit_button(
-            "Save measurement", use_container_width=True
+    with st.form("measurement_form", clear_on_submit=True):
+        measurement_date = st.date_input(
+            "Measurement date",
+            value=date.today(),
         )
 
-    st.markdown('</div>', unsafe_allow_html=True)
+        col1, col2 = st.columns(2)
 
-    if add_measurement:
-        if all(v is None for v in [weight, systolic, diastolic, heart_rate]):
-            st.error("Enter at least one measurement.")
-        else:
-            new_row = {
-                "Date": measure_date,
-                "Weight (kg)": weight,
-                "Systolic BP": systolic,
-                "Diastolic BP": diastolic,
-                "Heart rate": heart_rate,
-            }
-            st.session_state.measurements = pd.concat(
-                [
-                    st.session_state.measurements,
-                    pd.DataFrame([new_row])
-                ],
-                ignore_index=True
+        with col1:
+            weight = st.number_input(
+                "Weight (kg)",
+                min_value=0.0,
+                max_value=500.0,
+                value=0.0,
+                step=0.1,
+                help="Use 0 if unavailable.",
             )
-            st.success("Measurement saved for this session.")
+
+            systolic = st.number_input(
+                "Systolic blood pressure (mmHg)",
+                min_value=0,
+                max_value=350,
+                value=0,
+                help="Use 0 if unavailable.",
+            )
+
+            diastolic = st.number_input(
+                "Diastolic blood pressure (mmHg)",
+                min_value=0,
+                max_value=250,
+                value=0,
+                help="Use 0 if unavailable.",
+            )
+
+        with col2:
+            heart_rate = st.number_input(
+                "Heart rate (beats/min)",
+                min_value=0,
+                max_value=300,
+                value=0,
+                help="Use 0 if unavailable.",
+            )
+
+        measurement_submitted = st.form_submit_button("Save Measurement")
+
+    if measurement_submitted:
+        if all(x == 0 for x in [weight, systolic, diastolic, heart_rate]):
+            st.error("Enter at least one measurement greater than zero.")
+        else:
+            st.session_state.measurements.append(
+                {
+                    "Date": str(measurement_date),
+                    "Weight (kg)": weight if weight > 0 else None,
+                    "Systolic BP": systolic if systolic > 0 else None,
+                    "Diastolic BP": diastolic if diastolic > 0 else None,
+                    "Heart rate": heart_rate if heart_rate > 0 else None,
+                }
+            )
+            st.success("Measurement added to this session.")
             st.rerun()
 
-    data = st.session_state.measurements.copy()
+    st.markdown("")
+    section_title("Measurement history")
 
-    if not data.empty:
-        data["Date"] = pd.to_datetime(data["Date"])
-        data = data.sort_values("Date")
+    measurements = measurements_dataframe()
 
-        st.markdown("### Measurement charts")
+    if measurements.empty:
+        st.info("No measurements recorded. Load demo data or add measurements above.")
+    else:
+        measurements = measurements.sort_values("Date")
 
-        chart_columns = [
-            ("Weight (kg)", "Weight over time"),
-            ("Systolic BP", "Systolic blood pressure"),
-            ("Diastolic BP", "Diastolic blood pressure"),
-            ("Heart rate", "Heart rate over time"),
-        ]
-
-        for i in range(0, len(chart_columns), 2):
-            cols = st.columns(2)
-            for col, (column, title) in zip(
-                cols, chart_columns[i:i + 2]
-            ):
-                with col:
-                    st.markdown('<div class="panel">', unsafe_allow_html=True)
-                    panel_title(title)
-                    chart_data = data[["Date", column]].dropna()
-                    if not chart_data.empty:
-                        st.line_chart(
-                            chart_data.set_index("Date"),
-                            y=column,
-                            use_container_width=True
-                        )
-                    else:
-                        st.caption("No values recorded for this measurement.")
-                    st.markdown('</div>', unsafe_allow_html=True)
-
-        st.markdown("### Recorded measurements")
-        st.dataframe(data, use_container_width=True, hide_index=True)
+        st.dataframe(
+            measurements,
+            use_container_width=True,
+            hide_index=True,
+        )
 
         st.download_button(
-            "Download measurements (CSV)",
-            data.to_csv(index=False),
-            file_name="CareTrail_Health_Trends.csv",
+            "Export Health Measurements (CSV)",
+            data=measurements.to_csv(index=False).encode("utf-8"),
+            file_name="caretrail_health_measurements.csv",
             mime="text/csv",
-            use_container_width=True
         )
-    else:
-        st.info("No measurements recorded yet. Add data above or load demo data from Dashboard.")
 
-    st.warning(
-        "Charts are descriptive only. They do not establish a diagnosis, "
-        "identify medical emergencies, or recommend treatment."
-    )
+        chart_options = {
+            "Weight (kg)": "Weight (kg)",
+            "Systolic blood pressure": "Systolic BP",
+            "Diastolic blood pressure": "Diastolic BP",
+            "Heart rate": "Heart rate",
+        }
 
-
-# =========================================================
-# AI QUESTION CLASSIFIER
-# =========================================================
-elif page == "AI Question Classifier":
-    st.markdown('<div class="heading">AI question classifier</div>',
-                unsafe_allow_html=True)
-    st.markdown(
-        '<div class="subheading">Predict the intent category of a question '
-        'using the saved TF-IDF and Logistic Regression pipeline.</div>',
-        unsafe_allow_html=True
-    )
-
-    left, right = st.columns([1.3, 0.7])
-
-    with left:
-        st.markdown('<div class="panel">', unsafe_allow_html=True)
-        panel_title("Enter a question")
-        question = st.text_area(
-            "Question",
-            placeholder="Example: How can I understand the information in my records?",
-            height=150
+        selected_chart = st.selectbox(
+            "Select a measurement for the chart",
+            list(chart_options.keys()),
         )
-        classify = st.button("Classify question", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
-    with right:
-        st.markdown('<div class="panel">', unsafe_allow_html=True)
-        panel_title("Model categories")
-        for label in [
-            "Symptom help",
-            "Medication query",
-            "Records query",
-            "Health trends",
-            "General help",
-        ]:
-            st.markdown(
-                f'<span class="pill">{label}</span>',
-                unsafe_allow_html=True
-            )
-        st.markdown('</div>', unsafe_allow_html=True)
+        column = chart_options[selected_chart]
+        chart_data = measurements[["Date", column]].copy()
+        chart_data[column] = pd.to_numeric(chart_data[column], errors="coerce")
+        chart_data["Date"] = pd.to_datetime(chart_data["Date"], errors="coerce")
+        chart_data = chart_data.dropna(subset=["Date", column])
 
-    if classify:
-        if not question.strip():
-            st.warning("Please enter a question.")
-        elif model is None:
-            st.error("The trained model could not be loaded.")
-            with st.expander("Technical details"):
-                st.code(model_error or "Unknown model error")
+        if not chart_data.empty:
+            chart_data = chart_data.sort_values("Date").set_index("Date")
+            st.line_chart(chart_data, y=column)
         else:
-            try:
-                prediction = model.predict([question.strip()])[0]
-                label_map = {
-                    "symptom_help": "Symptom-related question",
-                    "medication_query": "Medication-related question",
-                    "records_query": "Medical records question",
-                    "health_trends": "Health trends question",
-                    "general_help": "General health assistance",
-                }
-                friendly = label_map.get(
-                    str(prediction),
-                    str(prediction).replace("_", " ").title()
-                )
+            st.warning("No valid values available for this chart.")
 
-                st.markdown("### Classification result")
-                st.markdown(f"""
-                <div class="hero">
-                  <div class="eyebrow">PREDICTED CATEGORY</div>
-                  <h1 style="font-size:28px">{safe(friendly)}</h1>
-                  <p>Model label: {safe(prediction)}</p>
-                </div>
-                """, unsafe_allow_html=True)
 
-                if hasattr(model, "predict_proba"):
-                    probabilities = model.predict_proba([question.strip()])[0]
-                    classes = model.classes_
+# =========================================================
+# 11. AI QUESTION CLASSIFIER
+# =========================================================
 
-                    st.markdown("### Model scores")
-                    for category, score in sorted(
-                        zip(classes, probabilities),
-                        key=lambda x: x[1],
-                        reverse=True
-                    ):
-                        name = label_map.get(
-                            str(category),
-                            str(category).replace("_", " ").title()
+elif page == "AI Question Classifier":
+    show_hero(
+        "AI Question Classifier",
+        "Test the trained machine-learning model using your own questions "
+        "or built-in examples.",
+        eyebrow="MACHINE LEARNING MODULE",
+    )
+
+    st.markdown(
+        """
+        <div class="info-card">
+            <span class="pill">HOW IT WORKS</span>
+            <h3>Text classification</h3>
+            <p>The model predicts an intent category from the question.
+            It does not generate a medical answer or diagnose a condition.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    examples = {
+        "Symptom help": "I have a headache and feel unwell.",
+        "Medication query": "I have a question about my medication.",
+        "Records query": "Help me understand my medical records.",
+        "Health trends": "How can I review my health measurements?",
+        "General help": "What features does this application provide?",
+    }
+
+    selected_example = st.selectbox(
+        "Try a demo question",
+        ["Choose a question"] + list(examples.keys()),
+    )
+
+    if st.button("Use Demo Question"):
+        if selected_example != "Choose a question":
+            st.session_state.classifier_question = examples[selected_example]
+            st.rerun()
+
+    question = st.text_area(
+        "Enter a question to classify",
+        key="classifier_question",
+        placeholder="Type a question or choose a demo question above.",
+        height=130,
+    )
+
+    try:
+        model = joblib.load("intelliphr_intent_model.joblib")
+        model_error = None
+    except Exception as exc:
+        model = None
+        model_error = str(exc)
+
+    if model is None:
+        st.error(
+            "The trained model could not be loaded. Check that "
+            "intelliphr_intent_model.joblib is present in the repository "
+            "and that the required packages are installed."
+        )
+        with st.expander("Technical details"):
+            st.code(model_error or "Unknown error")
+    else:
+        st.success("Trained model loaded successfully.")
+
+        if st.button("Classify Question", type="primary"):
+            if not question.strip():
+                st.warning("Enter a question before classifying.")
+            else:
+                try:
+                    prediction = model.predict([question])[0]
+                    result = {
+                        "question": question,
+                        "prediction": str(prediction),
+                    }
+
+                    if hasattr(model, "predict_proba"):
+                        scores = model.predict_proba([question])[0]
+                        classes = getattr(
+                            model,
+                            "classes_",
+                            range(len(scores)),
                         )
-                        st.write(f"**{name}** — {score:.1%}")
-                        st.progress(float(score))
 
-                st.warning(
-                    "This is a research classifier trained on synthetic "
-                    "examples. It does not diagnose conditions, assess urgency, "
-                    "or provide medical advice."
-                )
+                        result["scores"] = pd.DataFrame(
+                            {
+                                "Intent": [str(x) for x in classes],
+                                "Model score (%)": [
+                                    round(float(x) * 100, 2)
+                                    for x in scores
+                                ],
+                            }
+                        ).sort_values("Model score (%)", ascending=False)
 
-            except Exception as exc:
-                st.error("Question classification failed.")
-                with st.expander("Technical details"):
+                    st.session_state.classifier_result = result
+
+                except Exception as exc:
+                    st.session_state.classifier_result = None
+                    st.error("Classification failed.")
                     st.code(str(exc))
 
+        result = st.session_state.classifier_result
+
+        if result is not None:
+            st.markdown("")
+            section_title("Classification result")
+
+            st.write("**Question:**", result["question"])
+            st.metric("Predicted intent", result["prediction"])
+
+            if "scores" in result:
+                st.markdown("**Scores across available categories**")
+                st.dataframe(
+                    result["scores"],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+                chart_data = result["scores"].set_index("Intent")
+                st.bar_chart(chart_data["Model score (%)"])
+
+                st.caption(
+                    "Scores are model outputs, not medically validated "
+                    "probabilities or diagnostic confidence."
+                )
+
+            st.warning(
+                "The classifier predicts intent only. It does not provide "
+                "medical advice or establish a diagnosis."
+            )
+
 
 # =========================================================
-# ABOUT
+# 12. ABOUT CARETRAIL
 # =========================================================
+
 elif page == "About CareTrail":
-    st.markdown('<div class="heading">About CareTrail</div>',
-                unsafe_allow_html=True)
+    show_hero(
+        "About CareTrail",
+        "An academic prototype exploring health-information organisation "
+        "and machine-learning-based text classification.",
+    )
+
+    section_title("Project overview")
+
+    st.write(
+        "CareTrail brings together sample visit records, text comparisons, "
+        "measurement charts, CSV exports, and a machine-learning classifier "
+        "in a single Streamlit application."
+    )
+
+    section_title("Features included")
+
+    features = pd.DataFrame(
+        [
+            {
+                "Module": "Dashboard",
+                "Function": "Overview and summary metrics",
+            },
+            {
+                "Module": "Visit Comparison",
+                "Function": "Compare visit notes and export results",
+            },
+            {
+                "Module": "Medical Timeline",
+                "Function": "Store session visit entries and export CSV",
+            },
+            {
+                "Module": "Medication Review",
+                "Function": "Compare medication-list text entries",
+            },
+            {
+                "Module": "Health Trends",
+                "Function": "Record measurements, chart values and export CSV",
+            },
+            {
+                "Module": "AI Question Classifier",
+                "Function": "Predict question-intent categories",
+            },
+        ]
+    )
+
+    st.dataframe(features, use_container_width=True, hide_index=True)
+
+    section_title("Technologies")
+
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        st.markdown(
+            """
+            <div class="info-card">
+                <h3>Streamlit</h3>
+                <p>Interactive Python web application framework.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with c2:
+        st.markdown(
+            """
+            <div class="info-card">
+                <h3>Scikit-learn</h3>
+                <p>Machine-learning tools used by the text classifier.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with c3:
+        st.markdown(
+            """
+            <div class="info-card">
+                <h3>Pandas</h3>
+                <p>Tabular data handling, organisation and CSV exports.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    section_title("Limitations and responsible use")
+
     st.markdown(
-        '<div class="subheading">An academic prototype demonstrating '
-        'health-information organization, comparison and NLP classification.</div>',
-        unsafe_allow_html=True
+        """
+        - This is an academic demonstration, not a clinical system.
+        - Classifier results depend on the training data and can be incorrect.
+        - Model scores are not diagnostic confidence.
+        - Text comparison does not assess medical meaning or medication safety.
+        - Trend charts display recorded measurements without clinical interpretation.
+        - Session data is temporary and is not a permanent medical record.
+        - Do not enter identifiable patient information or sensitive medical records.
+        """
     )
 
-    left, right = st.columns(2)
-
-    with left:
-        st.markdown('<div class="panel">', unsafe_allow_html=True)
-        panel_title("Project features")
-        st.write("- Visit record comparison")
-        st.write("- Chronological medical timeline")
-        st.write("- Medication text review")
-        st.write("- Measurement trend charts")
-        st.write("- NLP-based question classification")
-        st.write("- Downloadable reports")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    with right:
-        st.markdown('<div class="panel">', unsafe_allow_html=True)
-        panel_title("Technology")
-        st.write("**Frontend:** Streamlit")
-        st.write("**NLP:** TF-IDF and Logistic Regression")
-        st.write("**Model loading:** Joblib")
-        st.write("**Data visualization:** Pandas and Streamlit charts")
-        st.write("**Deployment:** Streamlit Community Cloud")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="panel">', unsafe_allow_html=True)
-    panel_title("Limitations and responsible use")
-    st.write(
-        "CareTrail is a student research prototype, not a clinical "
-        "decision-support system. The classifier was trained on synthetic "
-        "examples and has not been clinically validated. Measurements and "
-        "record comparisons are not interpreted as medical advice."
+    st.warning(
+        "Do not use CareTrail to make diagnosis, treatment, or medication "
+        "decisions. Seek advice from a qualified healthcare professional."
     )
-    st.write(
-        "Session data may be lost when the session restarts. This version "
-        "does not provide secure persistent patient storage, user accounts, "
-        "or hospital-system integration. Do not enter identifiable patient data."
-    )
-    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # =========================================================
-# FOOTER
+# 13. FOOTER
 # =========================================================
-st.markdown("""
-<div class="footer">
-  <strong style="color:#17324D">CareTrail</strong>
-  · Healthcare Information & AI Prototype<br>
-  Synthetic data recommended · Not for diagnosis or treatment decisions
-</div>
-""", unsafe_allow_html=True)
+
+st.markdown(
+    """
+    <div class="footer">
+        <strong>CareTrail</strong> · Academic healthcare information prototype
+        <br>
+        For educational demonstration only. Not a substitute for professional
+        medical advice.
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
