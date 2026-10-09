@@ -24,7 +24,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.metrics import classification_report, confusion_matrix
 
 # =========================================================
-# CARETRAIL — Intelligent PHR Assistant Platform (Dark Theme)
+# CARETRAIL — Intelligent PHR Assistant Platform
 # =========================================================
 st.set_page_config(
     page_title="CareTrail | AI Personal Health Record Portal",
@@ -34,6 +34,7 @@ st.set_page_config(
 )
 
 DEFAULTS = {
+    "theme": "Dark",
     "visits": [],
     "notes": [],
     "vitals": [],
@@ -53,28 +54,49 @@ for key, value in DEFAULTS.items():
     if key not in st.session_state:
         st.session_state[key] = copy.deepcopy(value)
 
-# ------------------------- Dark Theme Palette -------------------------
-C = {
-    "bg": "#0B0F19",            # Midnight Slate Background
-    "panel": "#111827",         # Dark Card Panels
-    "panel_alt": "#1F2937",     # Dark Card Highlight
-    "text": "#F9FAFB",          # Crisp White Text
-    "muted": "#9CA3AF",         # Cool Gray Muted Text
-    "border": "#334155",        # Dark Slate Border
-    "accent": "#14B8A6",        # Glowing Emerald Teal Accent
-    "accent_hover": "#2DD4BF",  # Bright Teal Hover
-    "accent_text": "#042F2E",   # Deep Green Accent Text
-    "input_bg": "#1F2937",      # Dark Input Fields
-    "input_text": "#F9FAFB",    # Light Input Text
-    "sidebar": "#090D16",       # Deep Navy Sidebar
-    "sidebar_text": "#F9FAFB",  # Light Sidebar Text
-    "plot": "plotly_dark",
+# ------------------------- Dynamic Dual-Theme Palette -------------------------
+THEMES = {
+    "Light": {
+        "bg": "#FFFFFF",            # Pure White Background
+        "panel": "#FFFFFF",         # White Cards
+        "panel_alt": "#F8FAFC",     # Off-white Highlights
+        "text": "#000000",          # Crisp Black Text
+        "muted": "#475569",         # Slate Muted Text
+        "border": "#CBD5E1",        # Clear Border
+        "accent": "#0D9488",        # Clinical Teal Accent
+        "accent_hover": "#0F766E",  # Deep Teal Hover
+        "accent_text": "#FFFFFF",   # Accent Button Text
+        "input_bg": "#FFFFFF",      # Input White Background
+        "input_text": "#000000",    # Input Dark Text
+        "sidebar": "#F8FAFC",       # Sidebar Very Light Gray
+        "sidebar_text": "#000000",  # Sidebar Text
+        "plot": "plotly_white",
+    },
+    "Dark": {
+        "bg": "#0B0F19",            # Midnight Slate Background
+        "panel": "#111827",         # Dark Card Panels
+        "panel_alt": "#1F2937",     # Dark Card Highlight
+        "text": "#F9FAFB",          # Crisp White Text
+        "muted": "#9CA3AF",         # Cool Gray Muted Text
+        "border": "#334155",        # Dark Slate Border
+        "accent": "#14B8A6",        # Glowing Emerald Teal Accent
+        "accent_hover": "#2DD4BF",  # Bright Teal Hover
+        "accent_text": "#042F2E",   # Deep Green Accent Text
+        "input_bg": "#1F2937",      # Dark Input Fields
+        "input_text": "#F9FAFB",    # Light Input Text
+        "sidebar": "#090D16",       # Deep Navy Sidebar
+        "sidebar_text": "#F9FAFB",  # Light Sidebar Text
+        "plot": "plotly_dark",
+    },
 }
+
+C = THEMES.get(st.session_state.theme, THEMES["Dark"])
+is_dark = st.session_state.theme == "Dark"
 
 st.markdown(
     f"""
     <style>
-    :root {{ color-scheme: dark; }}
+    :root {{ color-scheme: {"dark" if is_dark else "light"}; }}
     
     html, body, .stApp, [data-testid="stAppViewContainer"],
     [data-testid="stMain"], [data-testid="stMainBlockContainer"] {{
@@ -110,14 +132,14 @@ st.markdown(
         border: 1px solid {C["border"]} !important;
         border-radius: 12px !important;
         padding: 16px !important;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
     }}
     
     [data-testid="stExpander"] {{
         background-color: {C["panel"]} !important;
         border: 1px solid {C["border"]} !important;
         border-radius: 12px !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
     }}
     [data-testid="stExpander"] summary,
     [data-testid="stExpander"] summary *,
@@ -354,7 +376,6 @@ def load_sample_profile(profile):
     if profile == "Personal Records":
         st.session_state.active_profile = profile
         return
-    # Check if custom profile exists in session state
     if profile in st.session_state.custom_profiles:
         data = st.session_state.custom_profiles[profile]
     else:
@@ -366,7 +387,7 @@ def load_sample_profile(profile):
 
 def make_backup():
     keys = ["visits", "notes", "vitals", "symptoms", "medications", "documents",
-            "classifier_result", "visit_comparison", "ai_history", "active_profile", "custom_profiles"]
+            "classifier_result", "visit_comparison", "ai_history", "active_profile", "custom_profiles", "theme"]
     data = {k: st.session_state.get(k) for k in keys}
     data.update({"exported_at": datetime.now().isoformat(), "format_version": 1})
     return json.dumps(data, indent=2, ensure_ascii=False)
@@ -379,7 +400,7 @@ def restore_backup(uploaded_file):
     for key in expected:
         if key in data and not isinstance(data[key], list):
             raise ValueError(f"Invalid backup: '{key}' must be a list.")
-    for key in expected + ["classifier_result", "visit_comparison", "active_profile", "custom_profiles"]:
+    for key in expected + ["classifier_result", "visit_comparison", "active_profile", "custom_profiles", "theme"]:
         if key in data:
             st.session_state[key] = data[key]
 
@@ -393,9 +414,9 @@ def make_doctor_pdf():
                             title="CareTrail Doctor Summary", author="CareTrail Prototype")
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(name="CareTitle", parent=styles["Title"], fontSize=20,
-                              leading=24, alignment=TA_CENTER, textColor=colors.HexColor("#14B8A6"), spaceAfter=10))
+                              leading=24, alignment=TA_CENTER, textColor=colors.HexColor("#0D9488"), spaceAfter=10))
     styles.add(ParagraphStyle(name="CareSection", parent=styles["Heading2"], fontSize=12,
-                              leading=15, textColor=colors.HexColor("#14B8A6"), spaceBefore=10, spaceAfter=5))
+                              leading=15, textColor=colors.HexColor("#0D9488"), spaceBefore=10, spaceAfter=5))
     styles.add(ParagraphStyle(name="CareSmall", parent=styles["BodyText"], fontSize=7.5, leading=10))
     story = [
         Paragraph("CareTrail — Doctor Summary", styles["CareTitle"]),
@@ -412,9 +433,9 @@ def make_doctor_pdf():
             return
         table = Table(rows, repeatRows=1, colWidths=widths, hAlign="LEFT")
         table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#14B8A6")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#042F2E")),
-            ("GRID", (0, 0), (-1, -1), .35, colors.HexColor("#334155")),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0D9488")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("GRID", (0, 0), (-1, -1), .35, colors.HexColor("#CBD5E1")),
             ("FONTSIZE", (0, 0), (-1, -1), 7),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("LEFTPADDING", (0, 0), (-1, -1), 4),
@@ -453,7 +474,7 @@ def make_doctor_pdf():
     doc.build(story)
     return output.getvalue()
 
-# ------------------------- Sidebar Navigation & Patient Creator -------------------------
+# ------------------------- Sidebar Navigation & Controls -------------------------
 NAV = [
     "Overview", "Health Notes & Timeline", "Vitals & Analytics", "Symptom Tracker",
     "Medications & Reminders", "Document Vault", "Visit Comparison",
@@ -466,7 +487,15 @@ with st.sidebar:
     st.caption("Intelligent PHR Assistant Platform")
     st.divider()
     
-    # Combined Profile List (Built-in Demos + User Created Custom Profiles)
+    # Theme Toggle Switch (Light vs Dark)
+    chosen_theme = st.radio("Appearance Theme", ["Dark", "Light"],
+                            index=0 if st.session_state.theme == "Dark" else 1,
+                            horizontal=True, key="theme_picker")
+    if chosen_theme != st.session_state.theme:
+        st.session_state.theme = chosen_theme
+        st.rerun()
+    st.divider()
+    
     all_profiles = BUILTIN_PROFILES + list(st.session_state.custom_profiles.keys())
     current_profile = st.session_state.active_profile
     profile_index = all_profiles.index(current_profile) if current_profile in all_profiles else 0
@@ -486,7 +515,7 @@ with st.sidebar:
         
     st.caption("Switch between demo patient scenarios or custom patient profiles.")
     
-    # Expander to Add a New Patient Profile for Live App Testing
+    # Add a New Patient Profile Form
     with st.expander("➕ Add New Patient Profile"):
         with st.form("new_patient_form", clear_on_submit=True):
             p_name = st.text_input("Patient Full Name")
@@ -503,7 +532,6 @@ with st.sidebar:
                 st.warning("Please enter a patient name.")
             else:
                 formatted_profile_name = f"{p_name.strip()} — {p_condition.strip() or 'General Checkup'}"
-                # Create fresh initial health records for this new custom patient
                 new_profile_data = {
                     "visits": [{"date": today_str(), "provider": "General Health Clinic", "reason": "Initial Patient Registration", "diagnosis": "Baseline Evaluation", "notes": f"New test patient registered: {p_condition}"}],
                     "notes": [{"date": today_str(), "title": "Patient Setup Note", "text": "Created profile for testing and tracking."}],
@@ -511,8 +539,6 @@ with st.sidebar:
                     "symptoms": [],
                     "medications": []
                 }
-                
-                # Save to session custom profiles dictionary
                 st.session_state.custom_profiles[formatted_profile_name] = new_profile_data
                 load_sample_profile(formatted_profile_name)
                 notify(f"Created & Loaded New Patient: {formatted_profile_name}")
@@ -541,7 +567,7 @@ if st.session_state.active_profile != "Personal Records":
 
 st.markdown(
     f"""<div style="background:{C['panel']};border:1px solid {C['border']};
-    border-radius:16px;padding:20px 24px;margin-bottom:20px;box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);">
+    border-radius:16px;padding:20px 24px;margin-bottom:20px;box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
     <div style="font-size:12px;letter-spacing:1.5px;font-weight:700;color:{C['accent']};text-transform:uppercase;">
     Personal Health Record Portal</div>
     <div style="font-size:28px;font-weight:800;color:{C['text']};margin:4px 0;">
@@ -907,7 +933,7 @@ elif page == "AI Question Classifier":
         st.write("Cross-validated evaluation metrics generated on synthetic PHR intent dataset:")
         
         rep_df = pd.DataFrame(report_dict).transpose()
-        st.dataframe(rep_df.style.highlight_max(axis=0, color="#064E3B"), use_container_width=True)
+        st.dataframe(rep_df, use_container_width=True)
         
         st.subheader("Confusion Matrix")
         classes = list(set(pipeline.named_steps['clf'].classes_))
@@ -961,4 +987,4 @@ elif page == "About & Privacy":
     """)
 
 st.divider()
-st.caption(f"CareTrail Prototype · Dark Mode · {datetime.now().strftime('%d %b %Y, %H:%M')}")
+st.caption(f"CareTrail Prototype · {st.session_state.theme} Mode · {datetime.now().strftime('%d %b %Y, %H:%M')}")
