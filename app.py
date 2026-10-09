@@ -90,17 +90,26 @@ st.markdown(
     f"""
     <style>
     :root {{ color-scheme: {"dark" if is_dark else "light"}; }}
+    
+    /* Core App Containers */
     html, body, .stApp, [data-testid="stAppViewContainer"],
     [data-testid="stMain"], [data-testid="stMainBlockContainer"] {{
         background-color: {C["bg"]} !important;
         color: {C["text"]} !important;
     }}
+    
+    /* Headers & Navigation Sidebar */
     [data-testid="stHeader"] {{ background: {C["bg"]} !important; }}
     [data-testid="stSidebar"], [data-testid="stSidebar"] > div {{
         background-color: {C["sidebar"]} !important;
         color: {C["sidebar_text"]} !important;
     }}
-    [data-testid="stSidebar"] * {{ color: {C["sidebar_text"]} !important; }}
+    [data-testid="stSidebar"] *, [data-testid="stSidebar"] p, 
+    [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {{
+        color: {C["sidebar_text"]} !important;
+    }}
+
+    /* Global Typography Fixes */
     .stApp p, .stApp span, .stApp label, .stApp li,
     .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5,
     .stApp h6, .stApp strong, .stMarkdown, .stMarkdown p,
@@ -111,6 +120,8 @@ st.markdown(
     [data-testid="stCaptionContainer"] p, .stCaption, small {{
         color: {C["muted"]} !important;
     }}
+
+    /* Metrics & Custom Panels */
     [data-testid="stMetric"] {{
         background: {C["panel"]} !important;
         border: 1px solid {C["border"]} !important;
@@ -119,13 +130,16 @@ st.markdown(
         box-shadow: 0 2px 8px rgba(20, 50, 70, 0.04);
     }}
     [data-testid="stExpander"], [data-testid="stVerticalBlockBorderWrapper"] {{
+        background-color: {C["panel"]} !important;
         border-color: {C["border"]} !important;
         border-radius: 12px !important;
     }}
+
+    /* Form Inputs, Text Areas, & Placeholders */
     .stApp input, .stApp textarea,
     .stApp [data-baseweb="input"] input,
     .stApp [data-baseweb="textarea"] textarea {{
-        background: {C["input_bg"]} !important;
+        background-color: {C["input_bg"]} !important;
         color: {C["input_text"]} !important;
         -webkit-text-fill-color: {C["input_text"]} !important;
         caret-color: {C["input_text"]} !important;
@@ -136,20 +150,36 @@ st.markdown(
         -webkit-text-fill-color: {C["muted"]} !important;
         opacity: 1 !important;
     }}
+
+    /* Dropdowns, Selectboxes, & BaseWeb Popover Overrides */
     .stApp [data-baseweb="select"] > div,
-    .stApp [data-baseweb="popover"], .stApp [data-baseweb="menu"] {{
-        background: {C["input_bg"]} !important;
+    .stApp [data-baseweb="popover"], .stApp [data-baseweb="menu"],
+    [data-baseweb="popover"] ul, [data-baseweb="menu"] ul {{
+        background-color: {C["input_bg"]} !important;
         border-color: {C["border"]} !important;
         color: {C["input_text"]} !important;
     }}
     .stApp [data-baseweb="select"] span,
+    .stApp [data-baseweb="select"] div,
     .stApp [data-baseweb="select"] input,
     [data-baseweb="popover"] *, [data-baseweb="menu"] * {{
         color: {C["input_text"]} !important;
+        background-color: transparent !important;
     }}
+    [data-baseweb="option"]:hover, [data-baseweb="option"][aria-selected="true"] {{
+        background-color: {C["panel_alt"]} !important;
+    }}
+
+    /* Radio Controls & Sliders */
+    .stApp [data-testid="stRadioButtonGroup"] p,
+    .stApp [data-testid="stRadioButtonGroup"] label {{
+        color: {C["text"]} !important;
+    }}
+
+    /* Buttons */
     .stApp [data-testid="stButton"] button,
     .stApp [data-testid="stDownloadButton"] button {{
-        background: {C["panel"]} !important;
+        background-color: {C["panel"]} !important;
         color: {C["text"]} !important;
         border: 1px solid {C["border"]} !important;
         border-radius: 9px !important;
@@ -164,28 +194,33 @@ st.markdown(
         color: {C["text"]} !important;
     }}
     .stApp button[kind="primary"] {{
-        background: {C["accent"]} !important;
+        background-color: {C["accent"]} !important;
         border-color: {C["accent"]} !important;
         color: {C["accent_text"]} !important;
     }}
     .stApp button[kind="primary"] p {{
         color: {C["accent_text"]} !important;
     }}
+
+    /* Tabs & Data Tables */
     .stApp [data-testid="stTabs"] button {{ color: {C["text"]} !important; }}
     .stApp [data-testid="stDataFrame"], .stApp [data-testid="stTable"],
-    .stApp table {{
-        background: {C["panel"]} !important;
+    .stApp table, [data-testid="stDataEditor"] {{
+        background-color: {C["panel"]} !important;
         color: {C["text"]} !important;
         border-color: {C["border"]} !important;
     }}
+
+    /* File Uploader & Alerts */
     .stApp [data-testid="stFileUploader"] section {{
-        background: {C["panel"]} !important;
+        background-color: {C["panel"]} !important;
         border: 1px dashed {C["border"]} !important;
         border-radius: 12px !important;
     }}
     .stApp [data-testid="stAlert"] {{
         border-radius: 10px !important;
     }}
+
     .stApp a {{ color: {C["accent"]} !important; }}
     hr {{ border-color: {C["border"]} !important; }}
     </style>
@@ -892,4 +927,3 @@ elif page == "About & Privacy":
 
 st.divider()
 st.caption(f"CareTrail prototype · {st.session_state.theme} mode · {datetime.now().strftime('%d %b %Y, %H:%M')}")
-
