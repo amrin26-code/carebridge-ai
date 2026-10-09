@@ -1,54 +1,3 @@
-An analysis of your original code alongside all requested modifications has been completed, and the fixes have been fully integrated into a complete, ready-to-run `app.py` script.
-
-### Key Corrections & Fixes Applied
-
-1. **Patient Profile Data Isolation**:
-* Added `profile_records` to `DEFAULTS` and initialized `PROFILE_DATA_KEYS`.
-
-
-* Replaced `load_sample_profile()` to save active profile state before switching, preventing record bleeding across sample or custom profiles.
-
-
-* Updated `load_synthetic_demo_comparison()` to register its dataset snapshot under `"Synthetic Patient Comparison Demo"` in `profile_records`.
-
-
-
-
-2. **Backup & Restore Logic**:
-* Extended `make_backup()` to include `profile_records`.
-
-
-* Rewrote `restore_backup()` to validate UTF-8 JSON structure, types, list contents, nested profile dictionaries, and active profile values before touching `st.session_state`.
-
-
-* Wrapped the restore button action inside an `if restore_backup(backup_file):` check to prevent false-positive success notifications.
-
-
-3. **Privacy Statements & Scrubbing Warnings**:
-* Updated text across the privacy panel, document vault, and About section to clearly state server processing conditions for hosted Streamlit instances and emphasize prototype boundaries.
-* Added an explicit `st.warning()` highlighting regex/pattern-matching limitations for identifier scrubbing.
-
-
-4. **Document Vault Optimization**:
-* Removed duplicate hexadecimal storage (`bytes_hex`) from document uploads to streamline session memory.
-
-
-5. **Vitals Alert Accuracy & Validation**:
-* Added robust numeric conversion via `pd.to_numeric` to avoid missing/invalid value crashes.
-* Replaced generic "all measurements normal" claims with explicit statements noting that only checked thresholds were evaluated.
-
-
-6. **AI Evaluation & Rubric Wording**:
-* Corrected tab layout syntax in the AI Question Classifier section.
-* Replaced model performance descriptions to honestly present the dataset size and scope.
-
-
-
----
-
-### Complete Clean `app.py` Code
-
-```python
 import copy
 import io
 import json
@@ -1439,5 +1388,3 @@ elif page == "About & Privacy":
 
 st.divider()
 st.caption(f"CareTrail Prototype · Active Profile: {st.session_state.active_profile} · Theme: {st.session_state.theme}")
-
-```
