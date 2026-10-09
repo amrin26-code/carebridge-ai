@@ -54,37 +54,37 @@ for key, value in DEFAULTS.items():
     if key not in st.session_state:
         st.session_state[key] = copy.deepcopy(value)
 
-# ------------------------- Dynamic Dual-Theme Palette -------------------------
+# ------------------------- Pure Light & Black Dark Theme Palette -------------------------
 THEMES = {
     "Light": {
-        "bg": "#FFFFFF",            # Pure White Background
-        "panel": "#FFFFFF",         # White Cards
-        "panel_alt": "#F8FAFC",     # Off-white Highlights
-        "text": "#000000",          # Crisp Black Text
-        "muted": "#475569",         # Slate Muted Text
-        "border": "#CBD5E1",        # Clear Border
-        "accent": "#0D9488",        # Clinical Teal Accent
-        "accent_hover": "#0F766E",  # Deep Teal Hover
-        "accent_text": "#FFFFFF",   # Accent Button Text
-        "input_bg": "#FFFFFF",      # Input White Background
-        "input_text": "#000000",    # Input Dark Text
-        "sidebar": "#F8FAFC",       # Sidebar Very Light Gray
-        "sidebar_text": "#000000",  # Sidebar Text
+        "bg": "#FFFFFF",            # Pure Solid White Background
+        "panel": "#F8FAFC",         # Crisp Light Panel
+        "panel_alt": "#F1F5F9",     # Panel Active Highlight
+        "text": "#000000",          # Pure High-Contrast Black Text
+        "muted": "#475569",         # Muted Subtext
+        "border": "#CBD5E1",        # Solid Border
+        "accent": "#0D9488",        # Clinical Emerald Accent
+        "accent_hover": "#0F766E",  # Deep Accent Hover
+        "accent_text": "#FFFFFF",   # Accent Text
+        "input_bg": "#FFFFFF",      # Pure White Inputs
+        "input_text": "#000000",    # Black Input Text
+        "sidebar": "#F8FAFC",       # Light Gray Sidebar
+        "sidebar_text": "#000000",  # Dark Sidebar Text
         "plot": "plotly_white",
     },
     "Dark": {
-        "bg": "#0B0F19",            # Midnight Slate Background
-        "panel": "#111827",         # Dark Card Panels
-        "panel_alt": "#1F2937",     # Dark Card Highlight
-        "text": "#F9FAFB",          # Crisp White Text
+        "bg": "#000000",            # Pure Solid Pitch Black Background
+        "panel": "#111827",         # Deep Slate Dark Panel
+        "panel_alt": "#1F2937",     # Dark Highlight Panel
+        "text": "#F9FAFB",          # Pure High-Contrast White Text
         "muted": "#9CA3AF",         # Cool Gray Muted Text
         "border": "#334155",        # Dark Slate Border
-        "accent": "#14B8A6",        # Glowing Emerald Teal Accent
+        "accent": "#14B8A6",        # Glowing Teal Accent
         "accent_hover": "#2DD4BF",  # Bright Teal Hover
-        "accent_text": "#042F2E",   # Deep Green Accent Text
-        "input_bg": "#1F2937",      # Dark Input Fields
-        "input_text": "#F9FAFB",    # Light Input Text
-        "sidebar": "#090D16",       # Deep Navy Sidebar
+        "accent_text": "#042F2E",   # Accent Text
+        "input_bg": "#1F2937",      # Dark Input Background
+        "input_text": "#F9FAFB",    # White Input Text
+        "sidebar": "#090D16",       # Deep Navy/Black Sidebar
         "sidebar_text": "#F9FAFB",  # Light Sidebar Text
         "plot": "plotly_dark",
     },
@@ -487,7 +487,7 @@ with st.sidebar:
     st.caption("Intelligent PHR Assistant Platform")
     st.divider()
     
-    # Theme Toggle Switch (Light vs Dark)
+    # Theme Toggle Switch (Pure Light vs Pitch Black Dark)
     chosen_theme = st.radio("Appearance Theme", ["Dark", "Light"],
                             index=0 if st.session_state.theme == "Dark" else 1,
                             horizontal=True, key="theme_picker")
