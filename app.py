@@ -359,13 +359,13 @@ def build_sample_profile(profile):
             sym, severity = "None", 0
 
         vitals.append(v)
-        symptoms.append({"date": d.isoformat(), "symptom": sym, "severity": severity, "duration": "Daily Log", "notes": "Fictional demo entry"})
+        symptoms.append({"date": d.isoformat(), "symptom": sym, "severity": severity, "duration": "Daily Log", "notes": f"Entry for patient profile: {profile}"})
 
     provider_name = "City General Health Center"
-    med_name = "Sample Prescription A" if "Diabetes" in profile or "Hypertension" in profile else "Sample Prescription B"
+    med_name = f"Prescription ({profile.split('—')[0].strip()})"
 
     return {
-        "visits": [{"date": (date.today()-timedelta(days=7)).isoformat(), "provider": provider_name, "reason": f"Follow-up for {profile.split('—')[0].strip()}", "diagnosis": "Condition Monitored", "notes": "Fictional scenario record."}],
+        "visits": [{"date": (date.today()-timedelta(days=7)).isoformat(), "provider": provider_name, "reason": f"Follow-up for {profile.split('—')[0].strip()}", "diagnosis": "Condition Monitored", "notes": f"Scenario record for {profile}"}],
         "notes": [{"date": today_str(), "title": "Clinical Summary Note", "text": f"Active profile set to {profile}."}],
         "vitals": vitals,
         "symptoms": symptoms,
@@ -407,6 +407,7 @@ def restore_backup(uploaded_file):
 def safe_text(value, limit=2000):
     return escape(str(value if value is not None else ""))[:limit].replace("\n", "<br/>")
 
+# FIXED: Dynamic patient profile summary generator
 def make_doctor_pdf():
     output = io.BytesIO()
     doc = SimpleDocTemplate(output, pagesize=A4, rightMargin=16*mm, leftMargin=16*mm,
@@ -418,18 +419,20 @@ def make_doctor_pdf():
     styles.add(ParagraphStyle(name="CareSection", parent=styles["Heading2"], fontSize=12,
                               leading=15, textColor=colors.HexColor("#0D9488"), spaceBefore=10, spaceAfter=5))
     styles.add(ParagraphStyle(name="CareSmall", parent=styles["BodyText"], fontSize=7.5, leading=10))
+    
+    current_patient = st.session_state.get('active_profile', 'Personal Records')
     story = [
         Paragraph("CareTrail — Doctor Summary", styles["CareTitle"]),
         Paragraph(f"Generated: {datetime.now().strftime('%d %B %Y, %H:%M')}", styles["Normal"]),
-        Paragraph(f"Profile: {safe_text(st.session_state.get('active_profile', 'Personal Records'))}", styles["Normal"]),
+        Paragraph(f"<b>Patient Profile:</b> {safe_text(current_patient)}", styles["Normal"]),
         Spacer(1, 8),
         Paragraph("Important Information", styles["CareSection"]),
-        Paragraph("This report summarizes prototype personal health records for clinician review.", styles["CareSmall"]),
+        Paragraph(f"This personalized medical summary contains structured records specifically for patient: <b>{safe_text(current_patient)}</b>.", styles["CareSmall"]),
     ]
     def add_table_section(title, rows, widths=None):
         story.append(Paragraph(title, styles["CareSection"]))
-        if not rows:
-            story.append(Paragraph("No records saved.", styles["Normal"]))
+        if not rows or len(rows) <= 1:
+            story.append(Paragraph("No records saved for this profile.", styles["Normal"]))
             return
         table = Table(rows, repeatRows=1, colWidths=widths, hAlign="LEFT")
         table.setStyle(TableStyle([
@@ -445,16 +448,19 @@ def make_doctor_pdf():
             ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
         ]))
         story.append(table)
+
     vitals = current_records("vitals")
     vrows = [["Date", "Systolic", "Diastolic", "Heart rate", "Temp °C", "Weight", "Glucose"]]
     for r in sorted(vitals, key=lambda x: str(x.get("date", "")), reverse=True)[:10]:
         vrows.append([safe_text(r.get(k, "")) for k in ["date", "systolic", "diastolic", "heart_rate", "temperature", "weight", "glucose_mg_dl"]])
-    add_table_section("Recent Vitals", vrows if vitals else [])
+    add_table_section("Recent Vitals", vrows)
+
     symptoms = current_records("symptoms")
     srows = [["Date", "Symptom", "Severity", "Duration", "Notes"]]
     for r in sorted(symptoms, key=lambda x: str(x.get("date", "")), reverse=True)[:10]:
         srows.append([Paragraph(safe_text(r.get(k, ""), 300), styles["CareSmall"]) for k in ["date", "symptom", "severity", "duration", "notes"]])
-    add_table_section("Recent Symptoms", srows if symptoms else [])
+    add_table_section("Recent Symptoms", srows)
+
     visits = current_records("visits")
     story.append(Paragraph("Health Visits", styles["CareSection"]))
     if visits:
@@ -466,11 +472,13 @@ def make_doctor_pdf():
             story.append(Spacer(1, 4))
     else:
         story.append(Paragraph("No visit records saved.", styles["Normal"]))
+
     meds = current_records("medications")
     mrows = [["Name", "Dose entered", "Frequency entered", "Time"]]
     for r in meds:
         mrows.append([Paragraph(safe_text(r.get(k, ""), 150), styles["CareSmall"]) for k in ["name", "dose", "frequency", "time"]])
-    add_table_section("Medication List", mrows if meds else [])
+    add_table_section("Medication List", mrows)
+
     doc.build(story)
     return output.getvalue()
 
@@ -487,7 +495,7 @@ with st.sidebar:
     st.caption("Intelligent PHR Assistant Platform")
     st.divider()
     
-    # Theme Toggle Switch (Pure Light vs Pitch Black Dark)
+    # Theme Toggle Switch
     chosen_theme = st.radio("Appearance Theme", ["Dark", "Light"],
                             index=0 if st.session_state.theme == "Dark" else 1,
                             horizontal=True, key="theme_picker")
@@ -563,7 +571,7 @@ with st.sidebar:
 
 # ------------------------- Page Header Banner -------------------------
 if st.session_state.active_profile != "Personal Records":
-    st.info(f"Active Patient Profile: **{st.session_state.active_profile}**.")
+    st.info(f"Active Patient Profile: **{st.session_state.active_profile}**")
 
 st.markdown(
     f"""<div style="background:{C['panel']};border:1px solid {C['border']};
@@ -794,9 +802,14 @@ elif page == "Medications & Reminders":
     if save_med:
         if not name.strip(): st.warning("Enter a medication name.")
         else:
-            st.session_state.medications.append({"name": name.strip(), "dose": dose.strip(),
-                "frequency": frequency.strip(), "time": reminder_time.strftime("%H:%M"),
-                "start_date": start_date.isoformat(), "notes": med_notes.strip()})
+            st.session_state.medications.append({
+                "name": name.strip(), 
+                "dose": dose.strip(),
+                "frequency": frequency.strip(), 
+                "time": reminder_time.strftime("%H:%M"),
+                "start_date": start_date.isoformat(), 
+                "notes": med_notes.strip()
+            })
             notify("Medication entry saved.")
     meds = current_records("medications")
     if meds:
@@ -808,18 +821,37 @@ elif page == "Medications & Reminders":
         st.subheader("Calendar Reminders")
         for i, med in enumerate(st.session_state.medications):
             raw_time = str(med.get("time", "09:00"))
-            try: hour, minute = map(int, raw_time.split(":")[:2])
-            except (ValueError, AttributeError): hour, minute = 9, 0
-            try: start_day = date.fromisoformat(str(med.get("start_date", today_str())))
-            except ValueError: start_day = date.today()
+            try: 
+                hour, minute = map(int, raw_time.split(":")[:2])
+            except (ValueError, AttributeError): 
+                hour, minute = 9, 0
+
+            # FIXED: Robust parsing for date values (strings or date objects)
+            s_val = med.get("start_date", today_str())
+            if isinstance(s_val, (date, datetime)):
+                start_day = s_val
+            else:
+                try: 
+                    start_day = date.fromisoformat(str(s_val))
+                except (ValueError, TypeError): 
+                    start_day = date.today()
+
             start = datetime.combine(start_day, time(hour, minute))
             summary = re.sub(r"([,;])", r"\\\1", str(med.get("name", "Medication")))
             summary = summary.replace("\\", "\\\\").replace("\n", "\\n")
-            ics = "\r\n".join(["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//CareTrail//Medication Reminder//EN",
-                "BEGIN:VEVENT", f"DTSTART:{start.strftime('%Y%m%dT%H%M%S')}",
+            ics = "\r\n".join([
+                "BEGIN:VCALENDAR", 
+                "VERSION:2.0", 
+                "PRODID:-//CareTrail//Medication Reminder//EN",
+                "BEGIN:VEVENT", 
+                f"DTSTART:{start.strftime('%Y%m%dT%H%M%S')}",
                 f"DTEND:{(start+timedelta(minutes=10)).strftime('%Y%m%dT%H%M%S')}",
                 f"SUMMARY:Medication reminder - {summary}",
-                "DESCRIPTION:Follow your clinician's instructions.", "END:VEVENT", "END:VCALENDAR", ""])
+                "DESCRIPTION:Follow your clinician's instructions.", 
+                "END:VEVENT", 
+                "END:VCALENDAR", 
+                ""
+            ])
             st.download_button(f"Download Reminder: {med.get('name', 'Medication')}", ics,
                                file_name=f"caretrail_reminder_{i+1}.ics", mime="text/calendar", key=f"med_ics_{i}")
     else: st.info("No medication entries saved.")
@@ -962,7 +994,7 @@ elif page == "Data Backup & Restore":
 # ------------------------- Doctor Summary PDF -------------------------
 elif page == "Doctor Summary PDF":
     st.subheader("Doctor Summary PDF")
-    st.write("Generate a formatted summary of visits, recent vitals, symptoms and medication entries.")
+    st.write(f"Generate a formatted summary of visits, recent vitals, symptoms and medication entries for **{st.session_state.active_profile}**.")
     if st.button("Generate Doctor Summary PDF", type="primary"):
         try:
             with st.spinner("Preparing PDF report..."):
