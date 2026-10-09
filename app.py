@@ -21,7 +21,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 # CARETRAIL — Single-file Streamlit Health Dashboard
 # =========================================================
 st.set_page_config(
-    page_title="CareTrail | Clinical Health Portal",
+    page_title="CareTrail | Health Portal",
     page_icon="🩺",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -49,47 +49,28 @@ for key, value in DEFAULTS.items():
         st.session_state[key] = copy.deepcopy(value)
 
 # ------------------------- Theme Palette -------------------------
-THEMES = {
-    "Light": {
-        "bg": "#F8FAFC",            # Soft Slate Background
-        "panel": "#FFFFFF",         # Pure White Cards
-        "panel_alt": "#F1F5F9",     # Light Gray Highlights
-        "text": "#0F172A",          # Deep Charcoal Text
-        "muted": "#64748B",         # Slate Muted Text
-        "border": "#CBD5E1",        # Clear Border
-        "accent": "#0D9488",        # Vibrant Clinical Teal
-        "accent_hover": "#0F766E",  # Deep Teal Hover
-        "accent_text": "#FFFFFF",   # White Accent Text
-        "input_bg": "#FFFFFF",      # Input White
-        "input_text": "#0F172A",    # Input Dark Text
-        "sidebar": "#F1F5F9",       # Soft Gray Sidebar
-        "sidebar_text": "#0F172A",  # Sidebar Dark Text
-        "plot": "plotly_white",
-    },
-    "Dark": {
-        "bg": "#0B0F19",            # Midnight Slate Background
-        "panel": "#111827",         # Dark Card Panels
-        "panel_alt": "#1F2937",     # Dark Card Highlight
-        "text": "#F9FAFB",          # Crisp White Text
-        "muted": "#9CA3AF",         # Cool Gray Muted Text
-        "border": "#334155",        # Dark Slate Border
-        "accent": "#14B8A6",        # Glowing Emerald Teal Accent
-        "accent_hover": "#2DD4BF",  # Bright Teal Hover
-        "accent_text": "#042F2E",   # Deep Green Accent Text
-        "input_bg": "#1F2937",      # Dark Input Fields
-        "input_text": "#F9FAFB",    # Light Input Text
-        "sidebar": "#090D16",       # Deep Navy Sidebar
-        "sidebar_text": "#F9FAFB",  # Light Sidebar Text
-        "plot": "plotly_dark",
-    },
+# Clean, High-Contrast Light Theme (White Background & Black Text)
+C = {
+    "bg": "#FFFFFF",            # Pure White Background
+    "panel": "#FFFFFF",         # White Cards / Containers
+    "panel_alt": "#F8FAFC",     # Subtle Off-White Highlights
+    "text": "#000000",          # Pure Black Text
+    "muted": "#475569",         # Muted Slate Text
+    "border": "#CBD5E1",        # Clear Light Border
+    "accent": "#0D9488",        # Clinical Teal Accent
+    "accent_hover": "#0F766E",  # Dark Teal Hover
+    "accent_text": "#FFFFFF",   # White Text on Accent Buttons
+    "input_bg": "#FFFFFF",      # Input White
+    "input_text": "#000000",    # Black Text in Inputs
+    "sidebar": "#F8FAFC",       # Very Light Gray Sidebar
+    "sidebar_text": "#000000",  # Black Sidebar Text
+    "plot": "plotly_white",
 }
-C = THEMES.get(st.session_state.theme, THEMES["Light"])
-is_dark = st.session_state.theme == "Dark"
 
 st.markdown(
     f"""
     <style>
-    :root {{ color-scheme: {"dark" if is_dark else "light"}; }}
+    :root {{ color-scheme: light; }}
     
     /* Core Layout Styles */
     html, body, .stApp, [data-testid="stAppViewContainer"],
@@ -129,10 +110,10 @@ st.markdown(
         border: 1px solid {C["border"]} !important;
         border-radius: 12px !important;
         padding: 16px !important;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.03);
     }}
     
-    /* Expander / Accordion Fixes */
+    /* Expander / Accordion Styles & High Contrast Fix */
     [data-testid="stExpander"] {{
         background-color: {C["panel"]} !important;
         border: 1px solid {C["border"]} !important;
@@ -145,7 +126,7 @@ st.markdown(
     [data-testid="stExpander"] header * {{
         color: {C["text"]} !important;
         background-color: {C["panel"]} !important;
-        font-weight: 600 !important;
+        font-weight: 700 !important;
     }}
 
     /* Form Fields, Inputs & Date Pickers */
@@ -157,7 +138,7 @@ st.markdown(
         color: {C["input_text"]} !important;
         -webkit-text-fill-color: {C["input_text"]} !important;
         caret-color: {C["input_text"]} !important;
-        border-color: {C["border"]} !important;
+        border: 1px solid {C["border"]} !important;
         border-radius: 8px !important;
     }}
     .stApp input::placeholder, .stApp textarea::placeholder {{
@@ -177,7 +158,7 @@ st.markdown(
     .stApp [data-baseweb="popover"], .stApp [data-baseweb="menu"],
     [data-baseweb="popover"] ul, [data-baseweb="menu"] ul {{
         background-color: {C["input_bg"]} !important;
-        border-color: {C["border"]} !important;
+        border: 1px solid {C["border"]} !important;
         color: {C["input_text"]} !important;
         border-radius: 8px !important;
     }}
@@ -199,14 +180,13 @@ st.markdown(
         color: {C["text"]} !important;
         border: 1px solid {C["border"]} !important;
         border-radius: 8px !important;
-        font-weight: 500 !important;
+        font-weight: 600 !important;
         transition: all 0.2s ease-in-out !important;
     }}
     .stApp [data-testid="stButton"] button:hover,
     .stApp [data-testid="stDownloadButton"] button:hover {{
         border-color: {C["accent"]} !important;
         color: {C["accent"]} !important;
-        box-shadow: 0 2px 8px rgba(13, 148, 136, 0.15) !important;
     }}
     .stApp [data-testid="stButton"] button p,
     .stApp [data-testid="stDownloadButton"] button p {{
@@ -291,63 +271,69 @@ def load_model():
                 return joblib.load(path), str(path), None
             except Exception as exc:
                 return None, str(path), str(exc)
-    return None, None, "Model file not found. Add intelliphr_intent_model.joblib to the repository root or a models/ folder."
+    return None, None, "Model file not found. Add intelliphr_intent_model.joblib to repository root or models/ folder."
+
+# ------------------------- 5 Demo Profiles Builder -------------------------
+PROFILES = [
+    "Personal Records",
+    "Alex Morgan — Diabetes Monitoring",
+    "Jamie Taylor — Post-Surgery Recovery",
+    "Sam Chen — Hypertension Management",
+    "Patel Family — Pediatric Checkup",
+    "Elena Rostova — Chronic Pain Tracking"
+]
 
 def build_sample_profile(profile):
     vitals, symptoms = [], []
     for offset in range(13, -1, -1):
         d = date.today() - timedelta(days=offset)
         if profile == "Alex Morgan — Diabetes Monitoring":
-            v = {"date": d.isoformat(), "systolic": 118 + (offset % 4) * 2,
-                 "diastolic": 76 + (offset % 3), "heart_rate": 72 + (offset % 5),
-                 "temperature": round(36.6 + (offset % 3) * .1, 1),
-                 "weight": round(78.4 - (13-offset) * .04, 1),
+            v = {"date": d.isoformat(), "systolic": 118 + (offset % 4) * 2, "diastolic": 76 + (offset % 3), 
+                 "heart_rate": 72 + (offset % 5), "temperature": 36.6, "weight": round(78.4 - (13-offset)*.04, 1), 
                  "glucose_mg_dl": 126 + (offset * 7 % 38)}
             sym, severity = "Fatigue", (offset * 3) % 6
         elif profile == "Jamie Taylor — Post-Surgery Recovery":
-            v = {"date": d.isoformat(), "systolic": 116 + (offset % 5) * 2,
-                 "diastolic": 74 + (offset % 4), "heart_rate": 76 + (offset % 6),
-                 "temperature": round(36.5 + (offset % 4) * .1, 1),
-                 "weight": round(65.2 - (13-offset) * .02, 1),
-                 "glucose_mg_dl": None}
-            sym, severity = "Pain", min(8, max(1, offset // 2 + 1))
+            v = {"date": d.isoformat(), "systolic": 116 + (offset % 5) * 2, "diastolic": 74 + (offset % 4), 
+                 "heart_rate": 76 + (offset % 6), "temperature": round(36.5 + (offset % 4)*.1, 1), 
+                 "weight": 65.2, "glucose_mg_dl": None}
+            sym, severity = "Surgical Site Pain", min(8, max(1, offset // 2 + 1))
+        elif profile == "Sam Chen — Hypertension Management":
+            v = {"date": d.isoformat(), "systolic": 142 - (13-offset)//2, "diastolic": 88 - (13-offset)//3, 
+                 "heart_rate": 68 + (offset % 4), "temperature": 36.6, "weight": 82.1, "glucose_mg_dl": None}
+            sym, severity = "Light Dizziness", (offset * 2) % 5
+        elif profile == "Patel Family — Pediatric Checkup":
+            v = {"date": d.isoformat(), "systolic": 102 + (offset % 3), "diastolic": 64 + (offset % 2), 
+                 "heart_rate": 95 + (offset % 8), "temperature": round(36.8 + (offset % 2)*.1, 1), 
+                 "weight": 24.5, "glucose_mg_dl": None}
+            sym, severity = "Mild Cough", (offset) % 4
+        elif profile == "Elena Rostova — Chronic Pain Tracking":
+            v = {"date": d.isoformat(), "systolic": 120 + (offset % 3), "diastolic": 78 + (offset % 2), 
+                 "heart_rate": 74 + (offset % 4), "temperature": 36.6, "weight": 58.0, "glucose_mg_dl": None}
+            sym, severity = "Joint Stiffness", min(9, max(2, (offset * 4) % 10))
         else:
-            v = {"date": d.isoformat(), "systolic": 118 + (offset % 4) * 2,
-                 "diastolic": 75 + (offset % 3), "heart_rate": 70 + (offset % 6),
-                 "temperature": round(36.6 + (offset % 3) * .1, 1),
-                 "weight": round(62.0 - (13-offset) * .02, 1),
-                 "glucose_mg_dl": None}
-            sym, severity = "Headache", offset % 4
+            v = {"date": d.isoformat(), "systolic": 120, "diastolic": 80, "heart_rate": 72, "temperature": 36.6, "weight": 70.0, "glucose_mg_dl": None}
+            sym, severity = "None", 0
+
         vitals.append(v)
-        symptoms.append({"date": d.isoformat(), "symptom": sym, "severity": severity,
-                         "duration": "Sample daily log",
-                         "notes": "Fictional demonstration data"})
-    if profile == "Alex Morgan — Diabetes Monitoring":
-        reason, diagnosis, med_name = "Routine diabetes follow-up", "Fictional diabetes monitoring scenario", "Sample medication A"
-    elif profile == "Jamie Taylor — Post-Surgery Recovery":
-        reason, diagnosis, med_name = "Recovery follow-up", "Fictional post-surgery recovery scenario", "Sample medication B"
-    else:
-        reason, diagnosis, med_name = "Routine health review", "Fictional general wellness scenario", None
-    medications = []
-    if med_name:
-        medications = [{"name": med_name, "dose": "Example only — not a prescription",
-                        "frequency": "As directed in this fictional scenario", "time": "09:00",
-                        "start_date": today_str(),
-                        "notes": "Fictional demo entry. Do not use for treatment."}]
+        symptoms.append({"date": d.isoformat(), "symptom": sym, "severity": severity, "duration": "Daily Log", "notes": "Fictional demo entry"})
+
+    provider_name = "City General Health Center"
+    med_name = "Sample Prescription A" if "Diabetes" in profile or "Hypertension" in profile else "Sample Prescription B"
+
     return {
-        "visits": [{"date": (date.today()-timedelta(days=7)).isoformat(),
-                    "provider": "Sample Community Clinic", "reason": reason,
-                    "diagnosis": diagnosis,
-                    "notes": "Fictional demonstration data only."}],
-        "notes": [{"date": today_str(), "title": "Sample care note",
-                   "text": "Fictional scenario data for demonstrating CareTrail."}],
-        "vitals": vitals, "symptoms": symptoms, "medications": medications,
-        "documents": [], "classifier_result": None, "visit_comparison": None,
-        "ai_history": [], "generated_pdf": None,
+        "visits": [{"date": (date.today()-timedelta(days=7)).isoformat(), "provider": provider_name, "reason": f"Follow-up for {profile.split('—')[0].strip()}", "diagnosis": "Condition Monitored", "notes": "Fictional scenario record."}],
+        "notes": [{"date": today_str(), "title": "Clinical Summary Note", "text": f"Active profile set to {profile}."}],
+        "vitals": vitals,
+        "symptoms": symptoms,
+        "medications": [{"name": med_name, "dose": "10mg", "frequency": "Once Daily", "time": "09:00", "start_date": today_str(), "notes": "Take with water"}]
     }
 
 def load_sample_profile(profile):
-    for key, value in build_sample_profile(profile).items():
+    if profile == "Personal Records":
+        st.session_state.active_profile = profile
+        return
+    data = build_sample_profile(profile)
+    for key, value in data.items():
         st.session_state[key] = copy.deepcopy(value)
     st.session_state.active_profile = profile
 
@@ -362,8 +348,7 @@ def restore_backup(uploaded_file):
     data = json.load(uploaded_file)
     if not isinstance(data, dict):
         raise ValueError("Backup must contain a JSON object.")
-    expected = ["visits", "notes", "vitals", "symptoms", "medications",
-                "documents", "ai_history"]
+    expected = ["visits", "notes", "vitals", "symptoms", "medications", "documents", "ai_history"]
     for key in expected:
         if key in data and not isinstance(data[key], list):
             raise ValueError(f"Invalid backup: '{key}' must be a list.")
@@ -381,20 +366,17 @@ def make_doctor_pdf():
                             title="CareTrail Doctor Summary", author="CareTrail Prototype")
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(name="CareTitle", parent=styles["Title"], fontSize=20,
-                              leading=24, alignment=TA_CENTER,
-                              textColor=colors.HexColor("#0D9488"), spaceAfter=10))
+                              leading=24, alignment=TA_CENTER, textColor=colors.HexColor("#0D9488"), spaceAfter=10))
     styles.add(ParagraphStyle(name="CareSection", parent=styles["Heading2"], fontSize=12,
-                              leading=15, textColor=colors.HexColor("#0D9488"),
-                              spaceBefore=10, spaceAfter=5))
-    styles.add(ParagraphStyle(name="CareSmall", parent=styles["BodyText"],
-                              fontSize=7.5, leading=10))
+                              leading=15, textColor=colors.HexColor("#0D9488"), spaceBefore=10, spaceAfter=5))
+    styles.add(ParagraphStyle(name="CareSmall", parent=styles["BodyText"], fontSize=7.5, leading=10))
     story = [
         Paragraph("CareTrail — Doctor Summary", styles["CareTitle"]),
         Paragraph(f"Generated: {datetime.now().strftime('%d %B %Y, %H:%M')}", styles["Normal"]),
         Paragraph(f"Profile: {safe_text(st.session_state.get('active_profile', 'Personal Records'))}", styles["Normal"]),
         Spacer(1, 8),
         Paragraph("Important information", styles["CareSection"]),
-        Paragraph("This report summarizes prototype records. Entries may be fictional or user-entered and are not independently verified. This is not a diagnosis or prescription.", styles["CareSmall"]),
+        Paragraph("This report summarizes prototype records. Entries may be fictional or user-entered.", styles["CareSmall"]),
     ]
     def add_table_section(title, rows, widths=None):
         story.append(Paragraph(title, styles["CareSection"]))
@@ -412,20 +394,18 @@ def make_doctor_pdf():
             ("RIGHTPADDING", (0, 0), (-1, -1), 4),
             ("TOPPADDING", (0, 0), (-1, -1), 4),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F1F5F9")]),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
         ]))
         story.append(table)
     vitals = current_records("vitals")
     vrows = [["Date", "Systolic", "Diastolic", "Heart rate", "Temp °C", "Weight", "Glucose"]]
     for r in sorted(vitals, key=lambda x: str(x.get("date", "")), reverse=True)[:10]:
-        vrows.append([safe_text(r.get(k, "")) for k in
-                      ["date", "systolic", "diastolic", "heart_rate", "temperature", "weight", "glucose_mg_dl"]])
+        vrows.append([safe_text(r.get(k, "")) for k in ["date", "systolic", "diastolic", "heart_rate", "temperature", "weight", "glucose_mg_dl"]])
     add_table_section("Recent vitals", vrows if vitals else [])
     symptoms = current_records("symptoms")
     srows = [["Date", "Symptom", "Severity", "Duration", "Notes"]]
     for r in sorted(symptoms, key=lambda x: str(x.get("date", "")), reverse=True)[:10]:
-        srows.append([Paragraph(safe_text(r.get(k, ""), 300), styles["CareSmall"])
-                      for k in ["date", "symptom", "severity", "duration", "notes"]])
+        srows.append([Paragraph(safe_text(r.get(k, ""), 300), styles["CareSmall"]) for k in ["date", "symptom", "severity", "duration", "notes"]])
     add_table_section("Recent symptoms", srows if symptoms else [])
     visits = current_records("visits")
     story.append(Paragraph("Health visits", styles["CareSection"]))
@@ -441,50 +421,44 @@ def make_doctor_pdf():
     meds = current_records("medications")
     mrows = [["Name", "Dose entered", "Frequency entered", "Time"]]
     for r in meds:
-        mrows.append([Paragraph(safe_text(r.get(k, ""), 150), styles["CareSmall"])
-                      for k in ["name", "dose", "frequency", "time"]])
+        mrows.append([Paragraph(safe_text(r.get(k, ""), 150), styles["CareSmall"]) for k in ["name", "dose", "frequency", "time"]])
     add_table_section("Medication list", mrows if meds else [])
-    story += [Spacer(1, 10), Paragraph(
-        "For clinician review only. Review all details before sharing. Do not use this report alone for diagnosis or treatment decisions.",
-        styles["CareSmall"])]
     doc.build(story)
     return output.getvalue()
 
-# ------------------------- Sidebar -------------------------
+# ------------------------- Sidebar Navigation & Auto-Load -------------------------
 NAV = [
     "Overview", "Health Notes & Timeline", "Vitals & Analytics", "Symptom Tracker",
     "Medications & Reminders", "Document Vault", "Visit Comparison",
     "AI Question Classifier", "Data Backup & Restore", "Doctor Summary PDF",
     "About & Privacy",
 ]
+
 with st.sidebar:
     st.markdown("## 🩺 CareTrail")
     st.caption("Clinical Health & Monitoring Portal")
     st.divider()
-    chosen_theme = st.radio("Appearance", ["Light", "Dark"],
-                            index=0 if st.session_state.theme == "Light" else 1,
-                            horizontal=True, key="theme_picker")
-    if chosen_theme != st.session_state.theme:
-        st.session_state.theme = chosen_theme
-        st.rerun()
-    st.divider()
-    st.subheader("Demo Patient")
-    profiles = ["Personal Records", "Alex Morgan — Diabetes Monitoring",
-                "Jamie Taylor — Post-Surgery Recovery", "Sample General Wellness"]
+    
+    st.subheader("Select Demo Profile")
     current_profile = st.session_state.active_profile
-    profile_index = profiles.index(current_profile) if current_profile in profiles else 0
-    chosen_profile = st.selectbox("Select a profile", profiles, index=profile_index,
-                                  key="profile_picker")
-    if st.button("Load Sample Patient Data", type="primary", use_container_width=True):
-        if chosen_profile == "Personal Records":
-            st.session_state.active_profile = chosen_profile
-            notify("Personal Records selected.")
-        else:
-            load_sample_profile(chosen_profile)
-            notify("Sample patient data loaded.")
+    profile_index = PROFILES.index(current_profile) if current_profile in PROFILES else 0
+    
+    chosen_profile = st.selectbox(
+        "Choose a patient profile", 
+        PROFILES, 
+        index=profile_index,
+        key="profile_picker"
+    )
+    
+    # Auto-load demo profile data dynamically upon changing selectbox option
+    if chosen_profile != st.session_state.active_profile:
+        load_sample_profile(chosen_profile)
+        notify(f"Loaded {chosen_profile}")
         st.rerun()
-    st.caption("Loading sample data replaces current records in session.")
+        
+    st.caption("Selecting a demo profile auto-populates 14 days of realistic vitals, symptoms, and visits.")
     st.divider()
+    
     pending = st.session_state.get("quick_nav")
     if pending in NAV:
         st.session_state.page = pending
@@ -502,11 +476,11 @@ with st.sidebar:
 
 # ------------------------- Page Header Banner -------------------------
 if st.session_state.active_profile != "Personal Records":
-    st.info(f"Demo Profile Active: **{st.session_state.active_profile}**. Sample details are for demonstration only.")
+    st.info(f"Demo Profile Active: **{st.session_state.active_profile}**. All sample details are fictional.")
 
 st.markdown(
     f"""<div style="background:{C['panel']};border:1px solid {C['border']};
-    border-radius:16px;padding:20px 24px;margin-bottom:20px;box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);">
+    border-radius:16px;padding:20px 24px;margin-bottom:20px;box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
     <div style="font-size:12px;letter-spacing:1.5px;font-weight:700;color:{C['accent']};text-transform:uppercase;">
     Clinical Care Portal</div>
     <div style="font-size:28px;font-weight:800;color:{C['text']};margin:4px 0;">
@@ -531,7 +505,7 @@ if page == "Overview":
             df = pd.DataFrame(data)
             if "date" in df: df = df.sort_values("date", ascending=False)
             st.dataframe(df.head(5), use_container_width=True, hide_index=True)
-        else: st.info("No visits recorded. Load sample data or add a visit.")
+        else: st.info("No visits recorded. Select a demo profile or add a visit.")
     with right:
         st.subheader("Recent Symptoms")
         data = current_records("symptoms")
@@ -658,7 +632,7 @@ elif page == "Vitals & Analytics":
         if fig is not None: st.plotly_chart(chart_theme(fig), use_container_width=True)
         st.download_button("Download Vitals CSV", csv_bytes(st.session_state.vitals),
                            file_name="caretrail_vitals.csv", mime="text/csv")
-    else: st.info("No vitals saved yet. Load a sample profile to see 14-day trends.")
+    else: st.info("No vitals saved yet. Pick a demo profile from the sidebar to view trends.")
     st.caption("Graphs display recorded values and are not diagnostic tools.")
 
 # ------------------------- Symptom Tracker -------------------------
@@ -693,8 +667,7 @@ elif page == "Symptom Tracker":
             st.plotly_chart(chart_theme(fig), use_container_width=True)
         st.download_button("Download Symptom CSV", csv_bytes(st.session_state.symptoms),
                            file_name="caretrail_symptoms.csv", mime="text/csv")
-    else: st.info("No symptoms logged. Load a sample patient to see example trends.")
-    st.caption("For severe or rapidly worsening symptoms, seek medical care.")
+    else: st.info("No symptoms logged. Pick a demo profile from the sidebar to view trends.")
 
 # ------------------------- Medications & Reminders -------------------------
 elif page == "Medications & Reminders":
@@ -739,7 +712,7 @@ elif page == "Medications & Reminders":
                 "DESCRIPTION:Follow your clinician's instructions.", "END:VEVENT", "END:VCALENDAR", ""])
             st.download_button(f"Download Reminder: {med.get('name', 'Medication')}", ics,
                                file_name=f"caretrail_reminder_{i+1}.ics", mime="text/calendar", key=f"med_ics_{i}")
-    else: st.info("No medication entries. Load a sample profile to see a demo entry.")
+    else: st.info("No medication entries. Select a demo profile from the sidebar.")
 
 # ------------------------- Document Vault -------------------------
 elif page == "Document Vault":
@@ -787,12 +760,12 @@ elif page == "Visit Comparison":
     st.subheader("Visit Comparison")
     visits = current_records("visits")
     if len(visits) < 2:
-        st.info("Add at least two visits or load a sample profile and add another visit.")
+        st.info("Add at least two visits or select a demo profile.")
     else:
         labels = [f"{v.get('date', '')} — {v.get('provider', 'Provider not entered')}" for v in visits]
         a, b = st.columns(2)
         ia = a.selectbox("First Visit", range(len(visits)), format_func=lambda i: labels[i], key="compare_a")
-        ib = b.selectbox("Second Visit", range(len(visits)), index=1, format_func=lambda i: labels[i], key="compare_b")
+        ib = b.selectbox("Second Visit", range(len(visits)), index=1 if len(visits) > 1 else 0, format_func=lambda i: labels[i], key="compare_b")
         if ia == ib: st.warning("Select two different visits.")
         else:
             va, vb = visits[ia], visits[ib]
@@ -820,13 +793,13 @@ elif page == "AI Question Classifier":
         elif st.session_state.ai_demo_mode:
             q = question.lower()
             if any(w in q for w in ["symptom", "pain", "headache", "fever"]):
-                intent, response = "symptom_help", "Demo response: Record the symptom, when it started, its severity, and associated changes. This does not assess urgency or diagnose."
+                intent, response = "symptom_help", "Demo response: Record the symptom, when it started, its severity, and associated changes."
             elif any(w in q for w in ["medicine", "medication", "dose", "drug"]):
-                intent, response = "medication_query", "Demo response: Check instructions from your clinician or pharmacist. This prototype does not verify doses or drug interactions."
+                intent, response = "medication_query", "Demo response: Check instructions from your clinician or pharmacist."
             elif any(w in q for w in ["record", "report", "document", "visit"]):
-                intent, response = "records_query", "Demo response: Use Health Notes & Timeline and Document Vault to organize information in this session."
+                intent, response = "records_query", "Demo response: Use Health Notes & Timeline and Document Vault to organize information."
             elif any(w in q for w in ["trend", "history", "change", "chart"]):
-                intent, response = "health_trends", "Demo response: Open Vitals & Analytics to view trends from measurements saved in this session."
+                intent, response = "health_trends", "Demo response: Open Vitals & Analytics to view trends."
             else:
                 intent, response = "general_help", "Demo response: CareTrail organizes health notes, visits, symptoms, measurements and medication entries."
             result = {"question": question.strip(), "intent": intent, "response": response,
@@ -835,7 +808,7 @@ elif page == "AI Question Classifier":
             st.session_state.ai_history.append(result)
             notify("Demo response generated.")
         else:
-            with st.spinner("Loading the trained classifier..."):
+            with st.spinner("Loading classifier..."):
                 model, path, error = load_model()
             if model is None:
                 st.error("The trained classifier could not be loaded.")
@@ -873,16 +846,11 @@ elif page == "AI Question Classifier":
             df = pd.DataFrame([{"Intent": k, "Probability": v} for k, v in scores.items()]).sort_values("Probability", ascending=False)
             fig = px.bar(df, x="Intent", y="Probability", title="Classifier Scores", range_y=[0, 1])
             st.plotly_chart(chart_theme(fig), use_container_width=True)
-    with st.expander("Previous Classifier Queries"):
-        if st.session_state.ai_history:
-            st.dataframe(pd.DataFrame(st.session_state.ai_history).drop(columns=["scores"], errors="ignore"),
-                         use_container_width=True, hide_index=True)
-        else: st.caption("No queries yet.")
 
 # ------------------------- Backup & Restore -------------------------
 elif page == "Data Backup & Restore":
     st.subheader("Data Backup & Restore")
-    st.write("Download a JSON backup of current session records. It may include personal notes and uploaded document contents.")
+    st.write("Download a JSON backup of current session records.")
     st.download_button("Download Complete JSON Backup", make_backup().encode("utf-8"),
                        file_name=f"caretrail_backup_{today_str()}.json", mime="application/json", type="primary")
     st.divider()
@@ -901,7 +869,6 @@ elif page == "Data Backup & Restore":
 elif page == "Doctor Summary PDF":
     st.subheader("Doctor Summary PDF")
     st.write("Generate a formatted summary of visits, recent vitals, symptoms and medication entries.")
-    st.warning("Review the report before sharing. It may contain fictional demo values or unverified user-entered data.")
     if st.button("Generate Doctor Summary PDF", type="primary"):
         try:
             with st.spinner("Preparing PDF report..."):
@@ -913,7 +880,6 @@ elif page == "Doctor Summary PDF":
         st.download_button("Download Doctor Summary PDF", st.session_state.generated_pdf,
                            file_name=f"caretrail_doctor_summary_{today_str()}.pdf",
                            mime="application/pdf", type="primary")
-    st.caption("The report is an organizational summary, not a clinical interpretation.")
 
 # ------------------------- About & Privacy -------------------------
 elif page == "About & Privacy":
@@ -921,26 +887,13 @@ elif page == "About & Privacy":
     st.write("CareTrail is a healthcare information prototype for organizing records, tracking measurements, visualizing trends and classifying text intent.")
     st.subheader("Current Capabilities")
     st.markdown("""
-    - Fictional sample profiles with 14 days of demonstration data
+    - 5 Distinct fictional sample profiles with 14 days of demonstration data
     - Health visit and note tracking
     - Editable vitals and symptom tables with interactive charts
     - Medication list and calendar reminder export
     - Document upload, text extraction and original-file download
-    - Offline mock responses and optional trained intent classifier
-    - JSON backup/restore and CSV exports
-    - Doctor Summary PDF export
-    - Refined Clinical Light and Slate Dark themes
+    - High-contrast clinical light theme
     """)
-    st.subheader("Limitations")
-    st.markdown("""
-    - Not a diagnostic or treatment system.
-    - Mock responses are predefined, not generated by an LLM.
-    - No real drug-interaction service, hospital record, wearable or pharmacy integration is connected.
-    - Session data may be lost when the app restarts.
-    - This prototype should not be represented as a production-secure medical-record system or as independently verified HIPAA compliance.
-    """)
-    st.subheader("Privacy")
-    st.write("Use fictional or de-identified data for public demonstrations. Protect downloaded backups and avoid storing sensitive medical information in this prototype.")
 
 st.divider()
-st.caption(f"CareTrail Prototype · {st.session_state.theme} Mode · {datetime.now().strftime('%d %b %Y, %H:%M')}")
+st.caption(f"CareTrail Prototype · {datetime.now().strftime('%d %b %Y, %H:%M')}")
